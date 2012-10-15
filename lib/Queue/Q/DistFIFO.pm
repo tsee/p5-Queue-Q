@@ -4,7 +4,7 @@ use warnings;
 use Carp qw(croak);
 
 use List::Util ();
-use Scalar::Util qw(refaddr);
+use Scalar::Util qw(refaddr blessed);
 
 use Class::XSAccessor {
     getters => [qw(shards next_shard)],
@@ -65,9 +65,15 @@ sub claim_item {
     # FIXME very inefficient!
     my $shard = $self->_next_shard;
     my $first_shard_addr = refaddr($shard);
+    my $class;
     while (1) {
         my $item = $shard->claim_item;
-        return $item if defined $item;
+        if (defined $item) {
+            $item->{_shard} = $shard
+                if blessed($item)
+                and $item->isa('Queue::Q::ClaimFIFO::Item');
+            return $item;
+        }
         $shard = $self->_next_shard;
         return undef if refaddr($shard) == $first_shard_addr;
     }
@@ -113,6 +119,20 @@ sub claimed_count {
         $ccount += $meth->($shard);
     }
     return $ccount;
+}
+
+sub mark_item_as_done {
+    my $self = shift;
+    my $item = shift;
+    my $shard = delete $item->{_shard};
+    die "Need item's shard to mark it as done! "
+        . "Or was this item previously marked as done?" if not $shard;
+    $shard->mark_item_as_done($item);
+}
+
+sub mark_items_as_done {
+    my $self = shift;
+    $self->mark_item_as_done($_) for @_;
 }
 
 1;
