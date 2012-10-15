@@ -53,6 +53,8 @@ sub _serialize_data {
 # for "friends" only
 sub _deserialize_data {
     my $self = shift;
+    return undef if not defined $_[0];
     return $SerealDecoder->decode($_[0]);
 }
 
+1;
