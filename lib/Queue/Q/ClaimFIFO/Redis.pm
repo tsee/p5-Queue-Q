@@ -21,26 +21,29 @@ use constant STORAGE_SUFFIX => '_storage';
 # in: queue_name, itemkey, value
 # out: nothing
 our $EnqueueScript = qq#
-    redis.call('lpush', KEYS[1], ARGV[1]);
-    redis.call('hset', KEYS[1] .. "${\STORAGE_SUFFIX()}", ARGV[1], ARGV[2]);
+    redis.call('lpush', KEYS[1], ARGV[1])
+    redis.call('hset', KEYS[1] .. "${\STORAGE_SUFFIX()}", ARGV[1], ARGV[2])
 #;
 our $EnqueueScriptSHA = Digest::SHA1::sha1_hex($EnqueueScript);
 
 # in: queue_name, time
 # out: itemkey, value
 our $ClaimScript = qq#
-    local itemkey = redis.call('rpop', KEYS[1]);
-    local data = redis.call('hget', KEYS[1] .. "${\STORAGE_SUFFIX()}", itemkey);
-    redis.call('zadd', KEYS[1] .. "${\CLAIMED_SUFFIX()}", ARGV[1], itemkey);
-    return {itemkey, data};
+    local itemkey = redis.call('rpop', KEYS[1])
+    if not itemkey then
+        return {nil, nil}
+    end
+    local data = redis.call('hget', KEYS[1] .. "${\STORAGE_SUFFIX()}", itemkey)
+    redis.call('zadd', KEYS[1] .. "${\CLAIMED_SUFFIX()}", ARGV[1], itemkey)
+    return {itemkey, data}
 #;
 our $ClaimScriptSHA = Digest::SHA1::sha1_hex($ClaimScript);
 
 # in: queue_name, itemkey
 # out: nothing
 our $FinishScript = qq#
-    redis.call('hdel', KEYS[1] .. "${\STORAGE_SUFFIX()}", ARGV[1]);
-    redis.call('zrem', KEYS[1] .. "${\CLAIMED_SUFFIX()}", ARGV[1]);
+    redis.call('hdel', KEYS[1] .. "${\STORAGE_SUFFIX()}", ARGV[1])
+    redis.call('zrem', KEYS[1] .. "${\CLAIMED_SUFFIX()}", ARGV[1])
 #;
 our $FinishScriptSHA = Digest::SHA1::sha1_hex($FinishScript);
 
@@ -111,6 +114,7 @@ sub claim_item {
         [1, $self->queue_name, time()],
         \$ClaimScript
     );
+    return undef if not defined $key;
 
     my $item = Queue::Q::ClaimFIFO::Item->new(
         _serialized_data => $serialized_data,
@@ -123,11 +127,9 @@ sub claim_item {
 
 sub claim_items {
     my $self = shift;
-    $self->_assert_script_ok if not $self->{_script_ok};
-
     my $n = shift || 1;
-    my @items;
 
+    my @items;
     for (1..$n) {
         # TODO Lua script for multiple items!
         my ($key, $serialized_data) = $self->_script_cache->run_script(
@@ -135,6 +137,10 @@ sub claim_items {
             [1, $self->queue_name, time()],
             \$ClaimScript
         );
+        if (not defined $key) {
+            push @items, (undef) x ($n-$_+1);
+            last;
+        }
 
         my $item = Queue::Q::ClaimFIFO::Item->new(
             _serialized_data => $serialized_data,
@@ -177,6 +183,18 @@ sub flush_queue {
     $self->_redis_conn->del($self->queue_name);
     $self->_redis_conn->del($self->queue_name . CLAIMED_SUFFIX);
     $self->_redis_conn->del($self->queue_name . STORAGE_SUFFIX);
+}
+
+sub queue_length {
+    my $self = shift;
+    my ($len) = $self->_redis_conn->llen($self->queue_name);
+    return $len;
+}
+
+sub claimed_count {
+    my $self = shift;
+    my ($len) = $self->_redis_conn->zcard($self->queue_name . CLAIMED_SUFFIX);
+    return $len;
 }
 
 1;
