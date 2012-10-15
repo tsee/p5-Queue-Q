@@ -1,22 +1,16 @@
-package Queue::Q::NaiveDistFIFO::Redis;
+package Queue::Q::DistFIFO::Redis;
 use strict;
 use warnings;
 use Carp qw(croak);
 
-use Queue::Q::NaiveDistFIFO;
-use parent 'Queue::Q::NaiveDistFIFO';
+use Queue::Q::DistFIFO;
+use parent 'Queue::Q::DistFIFO';
 
 use List::Util ();
 use Scalar::Util qw(refaddr);
-use Sereal::Encoder;
-use Sereal::Decoder;
-
-our $SerealEncoder;
-our $SerealDecoder;
 
 use Class::XSAccessor {
-    getters => [qw(shards)],
-    lvalue_getters => [qw(next_shard)],
+    getters => [qw(shards next_shard)],
 };
 
 sub new {
@@ -41,11 +35,12 @@ sub new {
 sub _next_shard {
     my $self = shift;
     my $ns = $self->{next_shard};
-    if ($ns > $#{$self->{shards_order}}) {
+    my $so = $self->{shards_order};
+    if ($ns > $#{$so}) {
         $ns = $self->{next_shard} = 0;
     }
     ++$self->{next_shard};
-    return $self->{shards_order}->[$ns];
+    return $so->[$ns];
 }
 
 sub enqueue_item {
@@ -61,6 +56,13 @@ sub enqueue_items {
     $self->_next_shard->enqueue_item($_) for @_;
 }
 
+sub enqueue_items_strict_ordering {
+    my $self = shift;
+    return if not @_;
+    my $shard = $self->_next_shard;
+    $shard->enqueue_items(@_);
+}
+
 sub claim_item {
     my $self = shift;
     # FIXME very inefficient!
@@ -70,7 +72,7 @@ sub claim_item {
         my $item = $shard->claim_item;
         return $item if defined $item;
         $shard = $self->_next_shard;
-        return() if refaddr($shard) == $first_shard_addr;
+        return undef if refaddr($shard) == $first_shard_addr;
     }
 }
 
@@ -91,11 +93,28 @@ sub flush_queue {
     return();
 }
 
-sub enqueue_items_strict_ordering {
+sub queue_length {
     my $self = shift;
-    return if not @_;
-    my $shard = $self->_next_shard;
-    $shard->enqueue_items(@_);
+    my $shards = $self->{shards};
+    my $len = 0;
+    for my $i (0..$#$shards) {
+        $len += $shards->[$i]->queue_length;
+    }
+    return $len;
+}
+
+sub claimed_count {
+    my $self = shift;
+    my $shards = $self->{shards};
+    my $ccount = 0;
+    for my $i (0..$#$shards) {
+        my $shard = $shards->[$i];
+        if (not( my $meth = $shard->can("claimed_count") )) {
+            Carp::croak("Shard $i does not support claimed count. Is it of type NaiveFIFO?");
+        }
+        $ccount += $meth->($shard);
+    }
+    return $ccount;
 }
 
 1;

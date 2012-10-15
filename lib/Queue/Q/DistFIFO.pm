@@ -1,4 +1,4 @@
-package Queue::Q::NaiveDistFIFO;
+package Queue::Q::DistFIFO;
 use strict;
 use warnings;
 
@@ -8,6 +8,7 @@ use Carp qw(croak);
 sub enqueue_item { croak("Unimplemented") }
 # enqueue_items(@list_of_data_structures)
 sub enqueue_items { croak("Unimplemented") }
+
 # my $item_or_undef = claim_item()
 sub claim_item { croak("Unimplemented") }
 # my (@items_or_undefs) = claim_items($n)
@@ -17,5 +18,10 @@ sub claim_items { croak("Unimplemented") }
 sub enqueue_items_strict_ordering { croak("Unimplemented") }
 
 sub flush_queue { croak("Unimplemented") }
+
+sub queue_length { croak("Unimplemented") }
+
+sub claimed_count { croak("Unimplemented") }
+
 
 1;
