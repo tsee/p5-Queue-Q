@@ -19,6 +19,7 @@ WriteMakefile(
       'Digest::SHA1' => '0',
       'parent' => '0',
       'File::Spec' => '0',
+      'Test::More' => '0.88',
     }, # e.g., Module::Name => 1.1
     ($] >= 5.005 ?     ## Add these new keywords supported since 5.005
       (ABSTRACT_FROM  => 'lib/Queue/Q.pm', # retrieve abstract from module
