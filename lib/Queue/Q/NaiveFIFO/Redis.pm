@@ -80,6 +80,12 @@ sub flush_queue {
     $self->_redis_conn->del($self->queue_name);
 }
 
+sub queue_len {
+    my $self = shift;
+    my ($len) = $self->_redis_conn->llen($self->queue_name);
+    return $len;
+}
+
 sub _serialize {
     my $self = shift;
     $SerealEncoder ||= Sereal::Encoder->new({stringify_undef => 1, warn_undef => 1});
