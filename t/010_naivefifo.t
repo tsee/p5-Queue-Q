@@ -21,39 +21,39 @@ isa_ok($q, "Queue::Q::NaiveFIFO::Redis");
 
 # clean up so the tests make sense
 $q->flush_queue;
-is($q->queue_len, 0, "Flushed queue has no items");
+is($q->queue_length, 0, "Flushed queue has no items");
 
 $q->enqueue_item([$_]) for 1..2;
-is($q->queue_len, 2, "Queue len check 1");
+is($q->queue_length, 2, "Queue len check 1");
 
 $q->enqueue_items(151..161);
-is($q->queue_len, 13, "Queue len check 2");
+is($q->queue_length, 13, "Queue len check 2");
 
 my $item = $q->claim_item();
 is_deeply($item, [1], "Fetching one item");
-is($q->queue_len, 12, "Queue len check 3");
+is($q->queue_length, 12, "Queue len check 3");
 
 $item = $q->claim_item();
 is_deeply($item, [2], "Fetching one item, 2");
-is($q->queue_len, 11, "Queue len check 4");
+is($q->queue_length, 11, "Queue len check 4");
 
 my @items = $q->claim_items();
 is_deeply(\@items, [151], "Fetching one item via claim_items");
-is($q->queue_len, 10, "Queue len check 5");
+is($q->queue_length, 10, "Queue len check 5");
 
 @items = $q->claim_items(3);
 is_deeply(\@items, [152..154], "Fetching three items via claim_items");
-is($q->queue_len, 7, "Queue len check 6");
+is($q->queue_length, 7, "Queue len check 6");
 
 $q->enqueue_item({foo => "bar"});
-is($q->queue_len, 8, "Queue len check 7");
+is($q->queue_length, 8, "Queue len check 7");
 
 @items = $q->claim_items(10);
 is_deeply(\@items, [155..161, {foo => "bar"}, undef, undef], "Fetching items via claim_items");
-is($q->queue_len, 0, "Queue len check 8");
+is($q->queue_length, 0, "Queue len check 8");
 
 $item = $q->claim_item();
 ok(!defined($item));
-is($q->queue_len, 0, "Queue len check 9");
+is($q->queue_length, 0, "Queue len check 9");
 
 done_testing();

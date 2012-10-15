@@ -80,7 +80,7 @@ sub flush_queue {
     $self->_redis_conn->del($self->queue_name);
 }
 
-sub queue_len {
+sub queue_length {
     my $self = shift;
     my ($len) = $self->_redis_conn->llen($self->queue_name);
     return $len;

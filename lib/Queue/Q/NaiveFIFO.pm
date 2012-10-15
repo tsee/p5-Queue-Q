@@ -15,7 +15,7 @@ sub claim_items { croak("Unimplemented") }
 
 sub flush_queue { croak("Unimplemented") }
 
-# my $nitems = queue_len()
-sub queue_len { croak("Unimplemented") }
+# my $nitems = queue_length()
+sub queue_length { croak("Unimplemented") }
 
 1;
