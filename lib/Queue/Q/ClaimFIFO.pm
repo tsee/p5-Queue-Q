@@ -22,4 +22,12 @@ sub mark_item_as_done { croak("Unimplemented") }
 # mark_item_as_done(@items_previously_claimed)
 sub mark_items_as_done { croak("Unimplemented") }
 
+sub flush_queue { croak("Unimplemented") }
+
+# my $nitems = queue_length()
+sub queue_length { croak("Unimplemented") }
+
+# my $nclaimed_items = claimed_count()
+sub claimed_count { croak("Unimplemented") }
+
 1;
