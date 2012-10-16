@@ -37,7 +37,7 @@ sub test_naive_fifo {
     is($q->queue_length, 8, "Queue len check 7");
 
     @items = $q->claim_items(10);
-    is_deeply(\@items, [155..161, {foo => "bar"}, undef, undef], "Fetching items via claim_items");
+    is_deeply(\@items, [155..161, {foo => "bar"}], "Fetching items via claim_items");
     is($q->queue_length, 0, "Queue len check 8");
 
     $item = $q->claim_item();

@@ -57,7 +57,6 @@ sub claim_items {
         $cl->{refaddr($_)} = $_;
     }
 
-    push @items, (undef) x ($n-scalar(@items));
     return @items;
 }
 

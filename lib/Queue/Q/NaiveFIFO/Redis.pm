@@ -72,7 +72,7 @@ sub claim_items {
     my @elem;
     $conn->rpop($qn, sub {push @elem, $_[0]}) for 1..$n;
     $conn->wait_all_responses;
-    return $self->_deserialize( @elem );
+    return $self->_deserialize( grep defined, @elem );
 }
 
 sub flush_queue {

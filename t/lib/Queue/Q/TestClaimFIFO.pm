@@ -57,7 +57,7 @@ sub test_claim_fifo {
     qlen_claimcount($q, 8, 3, "10");
 
     my @items2 = $q->claim_items(10);
-    is(scalar(@items2), 10);
+    is(scalar(@items2), 8);
     isa_ok($_, "Queue::Q::ClaimFIFO::Item") for @items2[0..7];
     ok(!defined($items2[$_]), "items2[$_]") for 8..9;
     qlen_claimcount($q, 0, 11, "11");

@@ -33,11 +33,8 @@ sub claim_item {
 sub claim_items {
     my $self = shift;
     my $n = shift || 1;
-    my @items;
     my $q = $self->{queue};
-    for (1..$n) {
-        push @items, shift @$q;
-    }
+    my @items = splice(@{$self->{queue}}, 0, $n);
     return @items;
 }
 

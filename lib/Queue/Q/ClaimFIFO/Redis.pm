@@ -137,10 +137,7 @@ sub claim_items {
             [1, $self->queue_name, time()],
             \$ClaimScript
         );
-        if (not defined $key) {
-            push @items, (undef) x ($n-$_+1);
-            last;
-        }
+        last if not defined $key;
 
         my $item = Queue::Q::ClaimFIFO::Item->new(
             _serialized_data => $serialized_data,
