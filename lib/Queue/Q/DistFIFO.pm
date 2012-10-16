@@ -82,8 +82,46 @@ sub claim_item {
 sub claim_items {
     my ($self, $n) = @_;
     $n ||= 1;
+
+    my $nshards = $self->num_shards;
+    my $at_a_time = int( $n / $nshards );
+    my $left_over = $n % $nshards;
+    my @shard_items = (($at_a_time) x $nshards);
+    ++$shard_items[$_] for 0 .. ($left_over-1);
+
     my @elem;
-    push @elem, $self->claim_item() for 1..$n;
+
+    my $shard = $self->_next_shard;
+    my $first_shard_addr = refaddr($shard);
+    my $i = 0;
+    my $nmissing = 0;
+    while (1) {
+        my $thisn = $shard_items[$i];
+        my @items = $shard->claim_items($thisn);
+        $shard_items[$i] -= scalar @items;
+        $nmissing += $shard_items[$i];
+        @items = map {
+                $_->{_shard} = $shard
+                    if blessed($_)
+                    and $_->isa('Queue::Q::ClaimFIFO::Item');
+                $_
+            } @items;
+        push @elem, @items;
+        $shard = $self->_next_shard;
+        last if scalar(@elem) == $n
+             or refaddr($shard) == $first_shard_addr;
+        ++$i;
+    }
+
+    # Fall back to naive mode - this could be done much
+    # better by redistributing the remaining items to the
+    # shards that had data... FIXME
+    for (1 .. $nmissing) {
+        my $item = $self->claim_item;
+        last if not defined $item;
+        push @elem, $item;
+    }
+
     return @elem;
 }
 
@@ -133,6 +171,11 @@ sub mark_item_as_done {
 sub mark_items_as_done {
     my $self = shift;
     $self->mark_item_as_done($_) for @_;
+}
+
+sub num_shards {
+    my $self = shift;
+    return scalar(@{ $self->{shards} });
 }
 
 1;
