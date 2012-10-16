@@ -3,9 +3,9 @@ use strict;
 use warnings;
 use Carp qw(croak);
 
+use Scalar::Util qw(blessed);
 use Digest::SHA1;
 use Redis;
-
 use Redis::ScriptCache;
 
 use Queue::Q::ClaimFIFO;
@@ -81,6 +81,12 @@ sub enqueue_item {
         if not @_ == 1;
 
     my $item = shift;
+    if (blessed($item) and $item->isa("Queue::Q::ClaimFIFO::Item")) {
+        croak("Don't pass a Queue::Q::ClaimFIFO::Item object to enqueue_item: "
+              . "Your data structure will be wrapped in one");
+    }
+    $item = Queue::Q::ClaimFIFO::Item->new(item_data => $item);
+
     $self->_script_cache->run_script(
         $EnqueueScriptSHA,
         [1, $self->queue_name, $item->_key, $item->_serialized_data],
@@ -92,11 +98,20 @@ sub enqueue_items {
     my $self = shift;
     return if not @_;
 
+    my @items;
+    foreach my $item (@_) {
+        if (blessed($item) and $item->isa("Queue::Q::ClaimFIFO::Item")) {
+            croak("Don't pass a Queue::Q::ClaimFIFO::Item object to enqueue_items: "
+                  . "Your data structure will be wrapped in one");
+        }
+        push @items, Queue::Q::ClaimFIFO::Item->new(item_data => $item);
+    }
+
     # FIXME, move loop onto the server or pipeline if possible!
     my $qn = $self->queue_name;
-    for (0..$#_) {
-        my $key  = $_[$_]->_key;
-        my $data = $_[$_]->_serialized_data;
+    for (0..$#items) {
+        my $key  = $items[$_]->_key;
+        my $data = $items[$_]->_serialized_data;
 
         $self->_script_cache->run_script(
             $EnqueueScriptSHA,

@@ -3,7 +3,6 @@ package # Hide from PAUSE
 use strict;
 use warnings;
 use Test::More;
-use Queue::Q::ClaimFIFO::Item qw(make_item);
 
 sub qlen_claimcount {
     my ($q, $qlen, $claimcount, $name) = @_;
@@ -19,10 +18,10 @@ sub test_claim_fifo {
     $q->flush_queue;
     qlen_claimcount($q, 0, 0, "Flushed queue is empty");
 
-    $q->enqueue_item(map make_item($_), [$_]) for 1..2;
+    $q->enqueue_item([$_]) for 1..2;
     qlen_claimcount($q, 2, 0, "1");
 
-    $q->enqueue_items(map make_item($_), 151..161);
+    $q->enqueue_items(151..161);
     qlen_claimcount($q, 13, 0, "2");
 
     my $item = $q->claim_item();
@@ -53,7 +52,7 @@ sub test_claim_fifo {
     qlen_claimcount($q, 7, 3, "9");
     is_deeply([map $_->item_data, @items], [152..154], "Fetching three items via claim_items");
 
-    $q->enqueue_item(make_item({foo => "bar"}));
+    $q->enqueue_item({foo => "bar"});
     qlen_claimcount($q, 8, 3, "10");
 
     my @items2 = $q->claim_items(10);

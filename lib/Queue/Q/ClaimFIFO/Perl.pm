@@ -6,7 +6,7 @@ use Queue::Q::ClaimFIFO;
 use parent 'Queue::Q::ClaimFIFO';
 
 use Carp qw(croak);
-use Scalar::Util qw(refaddr);
+use Scalar::Util qw(refaddr blessed);
 
 # Note: items are generally Queue::Q::ClaimFIFO::Item's
 use Queue::Q::ClaimFIFO::Item;
@@ -25,14 +25,26 @@ sub new {
 sub enqueue_item {
     my $self = shift;
     my $item = shift;
-    push @{$self->{queue}}, $item;
+
+    if (blessed($item) and $item->isa("Queue::Q::ClaimFIFO::Item")) {
+        croak("Don't pass a Queue::Q::ClaimFIFO::Item object to enqueue_item: "
+              . "Your data structure will be wrapped in one");
+    }
+
+    push @{$self->{queue}}, Queue::Q::ClaimFIFO::Item->new(item_data => $item);
     return 1;
 }
 
 # enqueue_items(@list_of_items)
 sub enqueue_items {
     my $self = shift;
-    push @{$self->{queue}}, @_;
+    for my $item (@_) {
+        if (blessed($item) and $item->isa("Queue::Q::ClaimFIFO::Item")) {
+            croak("Don't pass a Queue::Q::ClaimFIFO::Item object to enqueue_items: "
+                  . "Your data structure will be wrapped in one");
+        }
+    }
+    push @{$self->{queue}}, map Queue::Q::ClaimFIFO::Item->new(item_data => $_), @_;
     return 1;
 }
 

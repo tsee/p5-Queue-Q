@@ -4,7 +4,6 @@ use strict;
 use warnings;
 use Test::More;
 
-use Queue::Q::ClaimFIFO::Item qw(make_item);
 
 sub test_dist_fifo {
     my $q = shift;
@@ -85,7 +84,7 @@ sub test_dist_fifo_claim {
     $q->flush_queue;
     qlen_claimcount($q, 0, 0, "Flushed queue has no items");
 
-    $q->enqueue_item(make_item($_)) for 1..2;
+    $q->enqueue_item($_) for 1..2;
     qlen_claimcount($q, 2, 0, "1");
 
     my @items;
@@ -95,7 +94,7 @@ sub test_dist_fifo_claim {
     push @items, $q->claim_item();
     qlen_claimcount($q, 0, 2, "3");
 
-    $q->enqueue_items(make_item($_)) for 151..161;
+    $q->enqueue_items($_) for 151..161;
     qlen_claimcount($q, 11, 2, "4");
 
     @items = sort {$a->item_data <=> $b->item_data} @items; 
@@ -119,9 +118,9 @@ sub test_dist_fifo_claim {
     $q->mark_items_as_done(@items);
     qlen_claimcount($q, 0, 0, "9");
 
-    my @set1 = map make_item($_), (1..10);
-    my @set2 = map make_item($_), (11..20);
-    my @set3 = map make_item($_), (21..30);
+    my @set1 = (1..10);
+    my @set2 = (11..20);
+    my @set3 = (21..30);
 
     $q->enqueue_items_strict_ordering(@set1);
     $q->enqueue_items_strict_ordering(@set2);
@@ -130,7 +129,7 @@ sub test_dist_fifo_claim {
     for (1..30) {
         my $item = $q->claim_item();
         for my $s (\@set1, \@set2, \@set3) {
-            if (@$s and $s->[0]->item_data == $item->item_data) {
+            if (@$s and $s->[0] == $item->item_data) {
                 pass("Strict ordering checks: $_");
                 $q->mark_item_as_done($item);
                 $item = undef;
@@ -143,7 +142,7 @@ sub test_dist_fifo_claim {
         }
     }
 
-    $q->enqueue_items(map make_item($_), 1..100);
+    $q->enqueue_items(1..100);
     is($q->queue_length, 100, "Queue len check 8");
     $q->flush_queue;
     is($q->queue_length, 0, "Queue len check 8");
