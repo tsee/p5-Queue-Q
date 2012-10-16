@@ -11,14 +11,89 @@ __END__
 
 =head1 NAME
 
-Queue::Q - Queue implementations with multiple back-ends
+Queue::Q - Mix-and-match Queue Implementations and Backends
 
 =head1 SYNOPSIS
 
-  use Queue::Q::Simple::Redis;
+  # Pick you queue type and a back-end:
+  
+  # Very primitive FIFO queue (abstract interface)
+  use Queue::Q::NaiveFIFO;
+  # ... and it's pure-Perl, in-memory implementation
+  use Queue::Q::NaiveFIFO::Perl;
+  # ... it's Redis-based implementation
+  use Queue::Q::NaiveFIFO::Redis;
+  
+  # "Reliable" enqueue, claim, mark-as-done FIFO queue:
+  use Queue::Q::ClaimFIFO; # abstract interface
+  # ... and again, it's pure-Perl, in-memory implementation
+  use Queue::Q::ClaimFIFO::Perl;
+  # ... and it's Redis-based implementation
+  use Queue::Q::ClaimFIFO::Redis;
+  
+  # A composite, distributed queue, built from shards of
+  # the above types with weak global and strict local
+  # ordering, scaling beyond single nodes.
+  use Queue::Q::DistFIFO; 
+  
+  # Usage is somewhat similar for most queue types:
+  use Queue::Q::ClaimFIFO::Item qw(make_item);
+  my $queue = Queue::Q::ClaimFIFO::Redis->new(
+      server      => 'redis-01',
+      port        => '6379',
+      queue_name  => "image_queue"
+  );
+  
+  $q->enqueue_item( make_item($img_url) );
+  
+  # In another process on another machine:
+  while (defined( my $item = $q->claim_item )) {
+      # Do some work!
+      $q->mark_item_as_done($item);
+  }
+
+  # n-ary versions exist, too:
+  $q->enqueue_items( map make_item($_), @img_urls );
+  my @items = $q->claim_items(10); # 10 at a time, padded with undef
+  $q->mark_items_as_done(@items);
 
 =head1 DESCRIPTION
 
+C<Queue::Q> is a collection of queue implementations each with multiple backends.
+Right now, it comes with two basic queues:
+
+=over 2
+
+=item L<Queue::Q::NaiveFIFO>
+
+A naive FIFO queue C<NaiveFIFO>. Supports enqueuing data and later claiming
+it in the order it was enqueued. Strict ordering, low-latency, high-throughput,
+no resilience against crashing workers.
+
+=item L<Queue::Q::ClaimFIFO>
+
+A claim/mark-as-done FIFO queue C<ClaimFIFO>. Supports enqueuing data
+(as L<Queue::Q::ClaimFIFO::Item> objects), claiming items, and keeping
+track of items-being-worked-on until they are reported as done.
+Strict ordering, slightly higher latency and lower throughput than the
+naive FIFO queue. Resilience against crashing workers when combined with
+a clean-up script that checks for old, claimed items.
+
+=back
+
+Each of the two basic queues comes with two back-end implementations right now:
+One is a very simple, in-memory, single-process implementation L<Queue::Q::NaiveFIFO::Perl>
+and L<Queue::Q::ClaimFIFO::Perl> respectively. The other is an implementation
+based on Redis: L<Queue::Q::NaiveFIFO::Redis> and  L<Queue::Q::ClaimFIFO::Redis>.
+
+In addition two the two basic queue types, the distribution contains
+L<Queue::Q::DistFIFO>, an implementation of a distributed queue
+that can use the basic queues as shards (but only one type of shard per
+distributed queue). It supports all operations of the basic queues, but
+does not enforce strict global ordering, but weak global and strict local
+ordering. In an early test, two mid-range servers running multiple instances
+of Redis each sustained 800k-1M transactions per second with a naive-type
+distributed queue.
 
 =head1 AUTHOR
 
