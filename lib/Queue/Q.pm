@@ -37,14 +37,13 @@ Queue::Q - Mix-and-match Queue Implementations and Backends
   use Queue::Q::DistFIFO; 
   
   # Usage is somewhat similar for most queue types:
-  use Queue::Q::ClaimFIFO::Item qw(make_item);
   my $queue = Queue::Q::ClaimFIFO::Redis->new(
       server      => 'redis-01',
       port        => '6379',
       queue_name  => "image_queue"
   );
   
-  $q->enqueue_item( make_item($img_url) );
+  $q->enqueue_item( $img_url );
   
   # In another process on another machine:
   while (defined( my $item = $q->claim_item )) {
@@ -53,7 +52,7 @@ Queue::Q - Mix-and-match Queue Implementations and Backends
   }
 
   # n-ary versions exist, too:
-  $q->enqueue_items( map make_item($_), @img_urls );
+  $q->enqueue_items( @img_urls );
   my @items = $q->claim_items(10); # 10 at a time, padded with undef
   $q->mark_items_as_done(@items);
 

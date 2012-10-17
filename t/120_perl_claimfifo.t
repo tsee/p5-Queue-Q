@@ -8,7 +8,6 @@ use Queue::Q::Test;
 use Queue::Q::TestClaimFIFO;
 
 use Queue::Q::ClaimFIFO::Perl;
-use Queue::Q::ClaimFIFO::Item qw(make_item);
 
 my $q = Queue::Q::ClaimFIFO::Perl->new();
 isa_ok($q, "Queue::Q::ClaimFIFO");

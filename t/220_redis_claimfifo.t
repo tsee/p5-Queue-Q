@@ -8,7 +8,6 @@ use Queue::Q::Test;
 use Queue::Q::TestClaimFIFO;
 
 use Queue::Q::ClaimFIFO::Redis;
-use Queue::Q::ClaimFIFO::Item qw(make_item);
 
 my ($Host, $Port) = get_redis_connect_info();
 skip_no_redis() if not defined $Host;
