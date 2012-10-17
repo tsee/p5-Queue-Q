@@ -31,21 +31,27 @@ sub enqueue_item {
               . "Your data structure will be wrapped in one");
     }
 
-    push @{$self->{queue}}, Queue::Q::ClaimFIFO::Item->new(item_data => $item);
-    return 1;
+    $item = Queue::Q::ClaimFIFO::Item->new(item_data => $item);
+    push @{$self->{queue}}, $item;
+
+    return $item;
 }
 
 # enqueue_items(@list_of_items)
 sub enqueue_items {
     my $self = shift;
+
+    my @items;
     for my $item (@_) {
         if (blessed($item) and $item->isa("Queue::Q::ClaimFIFO::Item")) {
             croak("Don't pass a Queue::Q::ClaimFIFO::Item object to enqueue_items: "
                   . "Your data structure will be wrapped in one");
         }
+        push @items, Queue::Q::ClaimFIFO::Item->new(item_data => $item);
     }
-    push @{$self->{queue}}, map Queue::Q::ClaimFIFO::Item->new(item_data => $_), @_;
-    return 1;
+
+    push @{$self->{queue}}, @items;
+    return @items;
 }
 
 # my $item_or_undef = claim_item()

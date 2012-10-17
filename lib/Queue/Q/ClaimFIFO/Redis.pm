@@ -92,6 +92,8 @@ sub enqueue_item {
         [1, $self->queue_name, $item->_key, $item->_serialized_data],
         \$EnqueueScript
     );
+
+    return $item;
 }
 
 sub enqueue_items {
@@ -119,6 +121,8 @@ sub enqueue_items {
             \$EnqueueScript
         );
     }
+
+    return @items;
 }
 
 sub claim_item {

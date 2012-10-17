@@ -18,11 +18,16 @@ sub test_claim_fifo {
     $q->flush_queue;
     qlen_claimcount($q, 0, 0, "Flushed queue is empty");
 
-    $q->enqueue_item([$_]) for 1..2;
+    for (1..2) {
+        my $item = $q->enqueue_item([$_]);
+        isa_ok($item, "Queue::Q::ClaimFIFO::Item");
+    }
     qlen_claimcount($q, 2, 0, "1");
 
-    $q->enqueue_items(151..161);
+    my @x = $q->enqueue_items(151..161);
     qlen_claimcount($q, 13, 0, "2");
+    isa_ok($_, "Queue::Q::ClaimFIFO::Item") for @x;
+    @x = ();
 
     my $item = $q->claim_item();
     isa_ok($item, "Queue::Q::ClaimFIFO::Item");

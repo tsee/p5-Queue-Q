@@ -44,20 +44,22 @@ sub enqueue_item {
     my $self = shift;
     croak("Need exactly one item to enqeue")
         if not @_ == 1;
-    $self->_next_shard->enqueue_item($_[0]);
+    return $self->_next_shard->enqueue_item($_[0]);
 }
 
 sub enqueue_items {
     my $self = shift;
     return if not @_;
-    $self->_next_shard->enqueue_item($_) for @_;
+    my @rv;
+    push @rv, $self->_next_shard->enqueue_item($_) for @_;
+    return @rv;
 }
 
 sub enqueue_items_strict_ordering {
     my $self = shift;
     return if not @_;
     my $shard = $self->_next_shard;
-    $shard->enqueue_items(@_);
+    return $shard->enqueue_items(@_);
 }
 
 sub claim_item {

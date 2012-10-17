@@ -105,6 +105,8 @@ of that class (or its subclasses) as the (top-level)
 data structure to prevent using the same Item objects
 in multiple queues accidentally.
 
+Returns the C<Queue::Q::ClaimFIFO::Item>.
+
 Complexity: O(1)
 
 =head2 enqueue_items
@@ -115,6 +117,8 @@ times, but may help save on network round-trips.
 
 As with C<enqueue_item> this will refused to accept
 prefabricated C<Queue::Q::ClaimFIFO::Item>s.
+
+Returns the C<Queue::Q::ClaimFIFO::Item>s.
 
 Complexity: O(n) where n is the number of items to enqueue.
 
