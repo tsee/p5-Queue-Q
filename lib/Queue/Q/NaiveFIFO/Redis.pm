@@ -99,3 +99,61 @@ sub _deserialize {
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+Queue::Q::NaiveFIFO::Redis - In-memory Redis implementation of the NaiveFIFO queue
+
+=head1 SYNOPSIS
+
+  use Queue::Q::NaiveFIFO::Redis;
+  my $q = Queue::Q::NaiveFIFO::Redis->new(
+      server     => 'myredisserver',
+      port       => 6379,
+      queue_name => 'my_work_queue',
+  );
+  $q->enqueue_item("foo");
+  $q->enqueue_item({ bar => "baz" }); # any Sereal-serializable data structure
+  my $foo = $q->claim_item;
+  my $bar = $q->claim_item;
+
+=head1 DESCRIPTION
+
+Implements interface defined in L<Queue::Q::NaiveFIFO>:
+an implementation based on Redis lists.
+
+The data structures passed to C<enqueue_item> are serialized
+using Sereal (cf. L<Sereal::Encoder>, L<Sereal::Decoder>), so
+any data structures supported by that can be enqueued.
+
+=head1 METHODS
+
+All methods of L<Queue::Q::NaiveFIFO> plus:
+
+=head2 new
+
+Constructor. Takes named parameters. Required parameters are
+the C<server> hostname or address, the Redis C<port>, and
+the name of the Redis key to use as the C<queue_name>.
+
+You may optionally specify a Redis C<db> number to use.
+Since this module will establish the Redis connection,
+you may pass in a hash reference of options that are valid
+for the constructor of the L<Redis> module. This can be
+passed in as the C<redis_options> parameter.
+
+=head1 AUTHOR
+
+Steffen Mueller, E<lt>smueller@cpan.orgE<gt>
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright (C) 2012 by Steffen Mueller
+
+This library is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself, either Perl version 5.8.1 or,
+at your option, any later version of Perl 5 you may have available.
+
+=cut
