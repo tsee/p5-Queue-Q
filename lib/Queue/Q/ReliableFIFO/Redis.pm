@@ -17,7 +17,7 @@ my  $DEFAULT_CLAIM_TIMEOUT = 1;
 
 use Class::XSAccessor {
     getters => [qw(server port queue_name db _redis_conn _busy_queue
-                   _burry_queue busy_expiry_time)],
+                   _burry_queue _time_queue busy_expiry_time)],
 };
 
 sub new {
@@ -34,6 +34,7 @@ sub new {
     } => $class);
     $self->{_busy_queue} = $params{queue_name} . "_busy";
     $self->{_burry_queue} = $params{queue_name} . "_burry";
+    $self->{_time_queue} = $params{queue_name} . "_time";
 
     $self->{_redis_conn} = Redis->new(
         %{$params{redis_options} || {}},
@@ -118,7 +119,7 @@ sub flush_queue {
     $self->_redis_conn->del($self->_busy_queue);
 }
 
-sub queue_length       { $_[0]->_queue_length($_[0]->queue_name);       }
+sub queue_length       { $_[0]->_queue_length($_[0]->queue_name);   }
 sub busy_queue_length  { $_[0]->_queue_length($_[0]->_busy_queue);  }
 sub burry_queue_length { $_[0]->_queue_length($_[0]->_burry_queue); }
 sub _queue_length {
@@ -169,18 +170,21 @@ sub consume {
 my %known_actions = map { $_ => undef } (qw(requeue burry drop));
 sub handle_expired_items {
     my ($self, $timeout, $action) = @_;
+    $timeout ||= 10;
     die "unknown action\n" if !exists $known_actions{$action};
     my $conn = $self->_redis_conn;
     my @sereal = $conn->lrange($self->_busy_queue, 0, -1);
     my $time = time;
-    my $timetable = $self->{timetable};
-    my @match = grep { exists $timetable->{$_} } keys %$timetable;
+    my %timetable = 
+        map { reverse split /-/,$_,2 }
+        $conn->lrange($self->_time_queue, 0, -1);
+    my @match = grep { exists $timetable{$_} } @sereal;
     my %match = map { $_ => undef } @match;
-    my @timedout = grep { $time - $timetable->{$_} >= $timeout } @match;
+    my @timedout = grep { $time - $timetable{$_} >= $timeout } @match;
     my @log;
     # handle timed out items
     if ($action eq 'requeue') {
-        for my $sereal (@match) {
+        for my $sereal (@timedout) {
             my $n = $conn->lrem( $self->_busy_queue, 1, $sereal);
             if ($n) {
                 my $item = Queue::Q::ReliableFIFO::Item->new(
@@ -192,7 +196,7 @@ sub handle_expired_items {
         }
     }
     elsif ($action eq 'burry') {
-        for my $sereal (@match) {
+        for my $sereal (@timedout) {
             my $n = $conn->lrem( $self->_busy_queue, 1, $sereal);
             if ($n) {
                 $conn->lpush($self->burry_queue, $sereal);
@@ -202,7 +206,7 @@ sub handle_expired_items {
         }
     }
     elsif ($action eq 'drop') {
-        for my $sereal (@match) {
+        for my $sereal (@timedout) {
             my $n = $conn->lrem( $self->_busy_queue, 1, $sereal);
             push @log, Queue::Q::ReliableFIFO::Item->new(
                                 _serialized => $sereal) if ($n);
@@ -210,14 +214,19 @@ sub handle_expired_items {
     }
 
     # put in the items of older scans that did not timeout
+    my %timedout = map { $_ => undef } @timedout;
     my %newtimetable = 
-        map  { $_ => $timetable->{$_} } 
-        grep { ! exists $match{$_} }
-        keys %$timetable;
+        map  { $_ => $timetable{$_} } 
+        grep { ! exists $timedout{$_} }
+        keys %timetable;
     # put in the items of latest scan that did not timeout
     $newtimetable{$_} = $time 
-        for (grep { !exists $match{$_} } @sereal);
-    $self->{timetable} = \%newtimetable;
+        for (grep { !exists $newtimetable{$_} } @sereal);
+    $conn->multi;
+    $conn->del($self->_time_queue);
+    $conn->lpush($self->_time_queue, join('-',$newtimetable{$_},$_))
+        for (keys %newtimetable);
+    $conn->exec;
     return @log;
 }
 1;
@@ -258,6 +267,9 @@ Queue::Q::ReliableFIFO::Redis - In-memory Redis implementation of the ReliableFI
       }
       sleep(60);
   }
+
+  # Nagios?
+  $q->get_length_queue();
   $q->get_length_busy_queue();
 
   # Obsolete (consumer)
