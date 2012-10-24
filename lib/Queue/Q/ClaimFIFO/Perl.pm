@@ -117,3 +117,51 @@ sub claimed_count {
 }
 
 1;
+__END__
+
+=head1 NAME
+
+Queue::Q::ClaimFIFO::Perl - In-memory Perl implementation of the ClaimFIFO queue
+
+=head1 SYNOPSIS
+
+  use Queue::Q::ClaimFIFO::Perl;
+  my $q = Queue::Q::ClaimFIFO::Perl->new;
+  
+  # producer:
+  $q->enqueue_item([qw(my data structure)]); # rinse repeat...
+  
+  # consumer:
+  my $item = $q->claim_item;
+  my $data = $item->item_data;
+  # work with data...
+  $q->mark_item_as_done($item);
+  
+  # Implementation dependent. For example:
+  # - Fetch claimed items older X
+  # - Requeue or log&drop those timed-out items
+  # TODO API missing
+
+=head1 DESCRIPTION
+
+Implements interface defined in L<Queue::Q::ClaimFIFO>:
+a very simple in-memory implementation using a Perl array
+as the queue and Perl hash for keeping track of claimed items.
+
+=head1 METHODS
+
+All methods of C<Queue::Q::ClaimFIFO>.
+
+=head1 AUTHOR
+
+Steffen Mueller, E<lt>smueller@cpan.orgE<gt>
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright (C) 2012 by Steffen Mueller
+
+This library is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself, either Perl version 5.8.1 or,
+at your option, any later version of Perl 5 you may have available.
+
+=cut
