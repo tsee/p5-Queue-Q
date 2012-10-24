@@ -12,6 +12,7 @@ use Sereal::Decoder;
 
 our $SerealEncoder;
 our $SerealDecoder;
+my  $DEFAULT_CLAIM_TIMEOUT = 1;
 
 use Class::XSAccessor {
     getters => [qw(server port queue_name db _redis_conn)],
@@ -59,8 +60,15 @@ sub enqueue_items {
 }
 
 sub claim_item {
-    my $self = shift;
+    my ($self, $timeout) = @_;
+    $timeout ||= $DEFAULT_CLAIM_TIMEOUT;
+    # rpop has hight throughput than brpop, so we use brpop only when
+    # the queue is empty (i.e. rpop did not give back an item).
     my ($rv) = $self->_deserialize( $self->_redis_conn->rpop($self->queue_name) );
+    if (!$rv) {
+        my (undef, $v) = $self->_redis_conn->brpop($self->queue_name, $timeout);
+        $rv = $self->_deserialize($v);
+    }
     return $rv;
 }
 
@@ -143,6 +151,14 @@ Since this module will establish the Redis connection,
 you may pass in a hash reference of options that are valid
 for the constructor of the L<Redis> module. This can be
 passed in as the C<redis_options> parameter.
+
+=head2 claim_item($timeout_secs)
+
+The claim_item method has an optional parameter here, which
+is the timeout in seconds it will wait for a new item.
+Default wait time is one second. Using a timeout > 0 sec, no
+additional sleep() calls are needed and items will be available
+to the consumer without a delay.
 
 =head1 AUTHOR
 
