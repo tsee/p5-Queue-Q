@@ -87,15 +87,29 @@ sub claim_items {
     my $conn = $self->_redis_conn;
     my $qn = $self->queue_name;
     my $bq = $self->_busy_queue;
-    my @item;
+    my @items;
     $conn->rpoplpush($qn, $bq, sub {
         if (defined $_[0]) {
-            push @item, 
+            push @items, 
             Queue::Q::ReliableFIFO::Item->new(_serialized => $_[0])
         }
     }) for 1..$n;
     $conn->wait_all_responses;
-    return @item;
+    if (@items == 0) {
+        # list seems empty, use the blocking version
+        my $sereal = $conn->brpoplpush($qn, $bq, $DEFAULT_CLAIM_TIMEOUT);
+        if (defined $sereal) {
+            push(@items,
+                Queue::Q::ReliableFIFO::Item->new(_serialized => $sereal));
+            $conn->rpoplpush($qn, $bq, sub {
+                if (defined $_[0]) {
+                    push @items, 
+                    Queue::Q::ReliableFIFO::Item->new(_serialized => $_[0])
+                }
+            }) for 1 .. ($n-1);
+        }
+    }
+    return @items;
 }
 sub mark_item_as_done {
 	my ($self, $item) = @_;
@@ -107,7 +121,7 @@ sub mark_items_as_done {
     my $conn = $self->_redis_conn;
 	my $count = 0;
     $conn->lrem(
-        $self->_busy_queue, 1, $_[0]->_serialized, sub { $count += $_[0] })
+        $self->_busy_queue, 1, $_->_serialized, sub { $count += $_[0] })
             for @_;
 	$conn->wait_all_responses;
 	return $count;
@@ -128,7 +142,7 @@ sub _queue_length {
     return $len;
 }
 
-my %valid_options = map { $_ => 1 } (qw(OnError max_nr_requeues));
+my %valid_options = map { $_ => 1 } (qw(OnError max_nr_requeues Chunk));
 my %onerror  = (
     'die'     => sub { croak('Fatal error while consumming the queue'); },
     'ignore'  => sub {},
@@ -140,6 +154,10 @@ sub consume {
     for (keys %options) {
         die "Unknown option $_\n" if !$valid_options{$_};
     }
+
+    my $chunk = exists $options{Chunk} ? int($options{Chunk}) : 1;
+    $chunk ||= 1;
+
     my $onerror = $onerror{die};
     if (exists $options{OnError}) {
         my $k = $options{OnError};
@@ -153,16 +171,34 @@ sub consume {
     my $max_nr_requeues = $options{max_nr_requeues};
     my $stop = 0;
     local $SIG{INT} = local $SIG{TERM} = sub { print "stopping\n"; $stop = 1; };
-    while(!$stop) {
-        my $item = $self->claim_item();
-        next if (!$item);
-        eval { $callback->($item->data); 1; } 
-        or do {
-            warn;
-            $onerror->($self, $item);
-        };
-        my $count = $self->mark_item_as_done($item);
-        warn("item was already removed from queue") if $count == 0;
+    if ($chunk == 1) {
+        while(!$stop) {
+            my $item = $self->claim_item();
+            next if (!$item);
+            eval { $callback->($item->data); 1; } 
+            or do {
+                warn;
+                $onerror->($self, $item);
+            };
+            my $count = $self->mark_item_as_done($item);
+            warn("item was already removed from queue") if $count == 0;
+        }
+    }
+    else {
+        while(!$stop) {
+            my @items = $self->claim_items($chunk);
+            next if (@items == 0);
+            for my $item (@items) {
+                eval { $callback->($item->data); 1; } 
+                or do {
+                    warn;
+                    $onerror->($self, $item);
+                };
+            }
+            my $count = $self->mark_items_as_done(@items);
+            warn "not all items removed from busy queue ($count)\n"
+                if $count != @items;
+        }
     }
 }
 # methods to be used for cleanup script and Nagios checks
