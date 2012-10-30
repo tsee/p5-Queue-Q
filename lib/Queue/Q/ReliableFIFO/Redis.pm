@@ -13,8 +13,19 @@ use Data::Dumper;
 my  $DEFAULT_CLAIM_TIMEOUT = 1;
 
 use Class::XSAccessor {
-    getters => [qw(server port queue_name db _redis_conn _busy_queue
-                   _failed_queue _time_queue busy_expiry_time requeue_limit)],
+    getters => [qw(
+                server
+                port
+                queue_name
+                db
+                busy_expiry_time
+                requeue_limit
+                _redis_conn 
+                _main_queue
+                _busy_queue
+                _failed_queue
+                _time_queue
+                )],
     setters => { set_requeue_limit => 'requeue_limit' }
 };
 
@@ -30,6 +41,7 @@ sub new {
         db => $params{db} || 0,
         _redis_conn => undef,
     } => $class);
+    $self->{_main_queue} = $params{queue_name} . "_main";
     $self->{_busy_queue} = $params{queue_name} . "_busy";
     $self->{_failed_queue} = $params{queue_name} . "_failed";
     $self->{_time_queue} = $params{queue_name} . "_time";
@@ -51,35 +63,35 @@ sub enqueue_item {
     croak("Need exactly one item to enqeue")
         if not @_ == 1;
     my ($item) = Queue::Q::ReliableFIFO::Item->new(data => $_[0]);
-    $self->_redis_conn->lpush($self->queue_name, $item->_serialized);
+    $self->_redis_conn->lpush($self->_main_queue, $item->_serialized);
 }
 
 sub enqueue_items {
     my $self = shift;
     return if not @_;
-    my $qn = $self->queue_name;
+    my $qn = $self->_main_queue;
     my $conn = $self->_redis_conn;
     my @serial = 
         map { Queue::Q::ReliableFIFO::Item->new(data => $_)->_serialized } @_;
     $conn->lpush($qn, @serial);
 }
 
-sub _requeue_at_tail {
+sub _requeue_at_tail  { my $self = shift; $self->__requeue('tail', @_); }
+sub _requeue_at_front { my $self = shift; $self->__requeue('front', @_); }
+sub __requeue {
     my $self = shift;
-    return if not @_;
-    $self->_redis_conn->lpush($self->queue_name,
+    my $mode = shift;
+    my @serial = 
         map  { $_->_serialized }
         grep { $_->inc_nr_requeues <= $self->requeue_limit }
-        @_);
-}
-
-sub _requeue_at_front {
-    my $self = shift;
-    return if not @_;
-    $self->_redis_conn->rpush($self->queue_name,
-        map  { $_->_serialized } 
-        grep { $_->inc_nr_requeues <= $self->requeue_limit }
-        @_);
+        @_;
+    return if not @serial;
+    if ($mode eq 'tail') {
+        $self->_redis_conn->lpush($self->_main_queue, @serial);
+    }
+    else {
+        $self->_redis_conn->rpush($self->_main_queue, @serial);
+    }
 }
 
 sub mark_as_failed {
@@ -96,10 +108,10 @@ sub claim_item {
     # (i.e. brpoplpush). So use the blocked version only when we
     # need to wait.
     my $v = 
-        $self->_redis_conn->rpoplpush($self->queue_name, $self->_busy_queue)
+        $self->_redis_conn->rpoplpush($self->_main_queue, $self->_busy_queue)
         ||
         $self->_redis_conn->brpoplpush(
-            $self->queue_name, $self->_busy_queue, $timeout);
+            $self->_main_queue, $self->_busy_queue, $timeout);
     return if !$v;
     my ($item) = Queue::Q::ReliableFIFO::Item->new(_serialized => $v);
     return $item;
@@ -109,7 +121,7 @@ sub claim_items {
     my ($self, $n) = @_;
     $n ||= 1;
     my $conn = $self->_redis_conn;
-    my $qn = $self->queue_name;
+    my $qn = $self->_main_queue;
     my $bq = $self->_busy_queue;
     my @items;
     $conn->rpoplpush($qn, $bq, sub {
@@ -154,12 +166,12 @@ sub mark_items_as_done {
 
 sub flush_queue {
     my $self = shift;
-    $self->_redis_conn->del($self->queue_name);
+    $self->_redis_conn->del($self->_main_queue);
     $self->_redis_conn->del($self->_busy_queue);
     $self->_redis_conn->del($self->_time_queue);
 }
 
-sub queue_length       { $_[0]->_queue_length($_[0]->queue_name);   }
+sub queue_length       { $_[0]->_queue_length($_[0]->_main_queue);   }
 sub busy_queue_length  { $_[0]->_queue_length($_[0]->_busy_queue);  }
 sub failed_queue_length { $_[0]->_queue_length($_[0]->_failed_queue); }
 sub _queue_length {
@@ -284,7 +296,7 @@ sub handle_expired_items {
                 my $item = Queue::Q::ReliableFIFO::Item->new(
                     _serialized => $serial);
                 $item->inc_nr_requeues();
-                $conn->lpush($self->queue_name, $item->_serialized);
+                $conn->lpush($self->_main_queue, $item->_serialized);
                 push @log, $item;
             }
         }
