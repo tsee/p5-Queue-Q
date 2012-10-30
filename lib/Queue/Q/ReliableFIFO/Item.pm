@@ -26,9 +26,9 @@ sub new {
     }
     return $self;
 }
-sub time        { shift->_get('time'); }
-sub data        { shift->_get('data'); }
-sub nr_requeues { shift->_get('nr_requeues') || 0; }
+sub time_created  { shift->_get('time_created'); }
+sub data          { shift->_get('data'); }
+sub requeue_count { shift->_get('requeue_count') || 0; }
 sub _get { 
     my ($self, $elem) = @_;
     $self->_deserialize if ! exists $self->{data};
@@ -38,16 +38,15 @@ sub _serialized { $_[0]->{_serialized}; }
 sub inc_nr_requeues {
     my $self = shift;
     my $plain = $deserializer->decode($self->{_serialized});
-    $self->{nr_requeues} = ++$plain->{nr};
+    $self->{requeue_count} = ++$plain->{rc};
     $self->{_serialized} =  $serializer->encode($plain);
-    #print $self->{_serialized}, "\n";
-    return $self->{nr_requeues};
+    return $self->{requeue_count};
 }
 sub _deserialize {
     my $self = shift;
     my $plain = $deserializer->decode($self->{_serialized});
-    $self->{time} = $plain->{t};
-    $self->{nr_requeues} = $plain->{nr} if exists $plain->{nr};
+    $self->{time_created} = $plain->{t};
+    $self->{requeue_count} = $plain->{rc} if exists $plain->{rc};
     $self->{data} = $plain->{b};
 }
 1;

@@ -1,23 +1,21 @@
 package Queue::Q::ReliableFIFO::Redis;
 use strict;
 use warnings;
-use Carp qw(croak);
+use Carp qw(croak cluck);
 
 use Queue::Q::NaiveFIFO;
 use parent 'Queue::Q::ReliableFIFO';
 use Queue::Q::ReliableFIFO::Item;
 
 use Redis;
-use Sereal::Encoder;
-use Sereal::Decoder;
-use JSON::XS;
 use Data::Dumper;
 
 my  $DEFAULT_CLAIM_TIMEOUT = 1;
 
 use Class::XSAccessor {
     getters => [qw(server port queue_name db _redis_conn _busy_queue
-                   _burry_queue _time_queue busy_expiry_time)],
+                   _failed_queue _time_queue busy_expiry_time requeue_limit)],
+    setters => { set_requeue_limit => 'requeue_limit' }
 };
 
 sub new {
@@ -33,8 +31,9 @@ sub new {
         _redis_conn => undef,
     } => $class);
     $self->{_busy_queue} = $params{queue_name} . "_busy";
-    $self->{_burry_queue} = $params{queue_name} . "_burry";
+    $self->{_failed_queue} = $params{queue_name} . "_failed";
     $self->{_time_queue} = $params{queue_name} . "_time";
+    $self->{requeue_limit} ||= 5;
 
     $self->{_redis_conn} = Redis->new(
         %{$params{redis_options} || {}},
@@ -65,6 +64,31 @@ sub enqueue_items {
     $conn->lpush($qn, @serial);
 }
 
+sub _requeue_at_tail {
+    my $self = shift;
+    return if not @_;
+    $self->_redis_conn->lpush($self->queue_name,
+        map  { $_->_serialized }
+        grep { $_->inc_nr_requeues <= $self->requeue_limit }
+        @_);
+}
+
+sub _requeue_at_front {
+    my $self = shift;
+    return if not @_;
+    $self->_redis_conn->rpush($self->queue_name,
+        map  { $_->_serialized } 
+        grep { $_->inc_nr_requeues <= $self->requeue_limit }
+        @_);
+}
+
+sub mark_as_failed {
+    my $self = shift;
+    return if not @_;
+    $self->_redis_conn->lpush($self->_failed_queue,
+        map { $_->_serialized } @_);
+}
+
 sub claim_item {
     my ($self, $timeout) = @_;
     $timeout ||= $DEFAULT_CLAIM_TIMEOUT;
@@ -72,7 +96,7 @@ sub claim_item {
     # (i.e. brpoplpush). So use the blocked version only when we
     # need to wait.
     my $v = 
-	    $self->_redis_conn->rpoplpush($self->queue_name, $self->_busy_queue)
+        $self->_redis_conn->rpoplpush($self->queue_name, $self->_busy_queue)
         ||
         $self->_redis_conn->brpoplpush(
             $self->queue_name, $self->_busy_queue, $timeout);
@@ -97,155 +121,189 @@ sub claim_items {
     $conn->wait_all_responses;
     if (@items == 0) {
         # list seems empty, use the blocking version
-        my $sereal = $conn->brpoplpush($qn, $bq, $DEFAULT_CLAIM_TIMEOUT);
-        if (defined $sereal) {
+        my $serial = $conn->brpoplpush($qn, $bq, $DEFAULT_CLAIM_TIMEOUT);
+        if (defined $serial) {
             push(@items,
-                Queue::Q::ReliableFIFO::Item->new(_serialized => $sereal));
+                Queue::Q::ReliableFIFO::Item->new(_serialized => $serial));
             $conn->rpoplpush($qn, $bq, sub {
                 if (defined $_[0]) {
                     push @items, 
-                    Queue::Q::ReliableFIFO::Item->new(_serialized => $_[0])
+                        Queue::Q::ReliableFIFO::Item->new(_serialized => $_[0]);
                 }
             }) for 1 .. ($n-1);
+            $conn->wait_all_responses;
         }
     }
     return @items;
 }
 sub mark_item_as_done {
-	my ($self, $item) = @_;
+    my ($self, $item) = @_;
     return $self->_redis_conn->lrem($self->_busy_queue, 1, $item->_serialized);
 }
 
 sub mark_items_as_done {
-	my $self = shift;
+    my $self = shift;
     my $conn = $self->_redis_conn;
-	my $count = 0;
+    my $count = 0;
     $conn->lrem(
         $self->_busy_queue, 1, $_->_serialized, sub { $count += $_[0] })
             for @_;
-	$conn->wait_all_responses;
-	return $count;
+    $conn->wait_all_responses;
+    return $count;
 }
 
 sub flush_queue {
     my $self = shift;
     $self->_redis_conn->del($self->queue_name);
     $self->_redis_conn->del($self->_busy_queue);
+    $self->_redis_conn->del($self->_time_queue);
 }
 
 sub queue_length       { $_[0]->_queue_length($_[0]->queue_name);   }
 sub busy_queue_length  { $_[0]->_queue_length($_[0]->_busy_queue);  }
-sub burry_queue_length { $_[0]->_queue_length($_[0]->_burry_queue); }
+sub failed_queue_length { $_[0]->_queue_length($_[0]->_failed_queue); }
 sub _queue_length {
     my ($self, $qn) = @_;
     my ($len) = $self->_redis_conn->llen($qn);
     return $len;
 }
 
-my %valid_options = map { $_ => 1 } (qw(OnError max_nr_requeues Chunk));
-my %onerror  = (
-    'die'     => sub { croak('Fatal error while consumming the queue'); },
-    'ignore'  => sub {},
-    'requeue' => sub { my ($self, $item) = @_; $self->_requeue($item); },
-    'burry'   => sub { my ($self, $item) = @_; $self->_burry($item); },
-);
+my %valid_options       = map { $_ => 1 } (qw(Chunk DieOnError));
+my %valid_error_actions = map { $_ => 1 } (qw(drop requeue fail));
+
 sub consume {
-    my ($self, $callback, %options) = @_;
-    for (keys %options) {
+    my ($self, $callback, $error_action, $options) = @_;
+    # validation of input
+    $error_action ||= 'drop';
+    die "Unknown error action\n"
+        if ! exists $valid_error_actions{$error_action};
+    my %error_subs = (
+        'drop'    => sub {},
+        'requeue' => sub { my ($self, $item) = @_;
+                           $self->_requeue_at_tail($item); },
+        'fail'    => sub { my ($self, $item) = @_;
+                           $self->mark_as_failed($item); },
+    );
+    my $onerror = $error_subs{$error_action} 
+        || die "no handler for $error_action\n";
+
+    $options ||= {};
+    my $chunk = delete $options->{Chunk} || 1;
+    die "Chunk should be a number > 0\n" if (! $chunk > 0);
+    my $die   = delete $options->{DieOnError} || 0;
+
+    for (keys %$options) {
         die "Unknown option $_\n" if !$valid_options{$_};
     }
 
-    my $chunk = exists $options{Chunk} ? int($options{Chunk}) : 1;
-    $chunk ||= 1;
-
-    my $onerror = $onerror{die};
-    if (exists $options{OnError}) {
-        my $k = $options{OnError};
-        if (exists $onerror{$k}) {
-            $onerror = $onerror{$k};
-        }
-        else {
-            die "Invalid option OnError=$k\n";
-        }
-    }
-    my $max_nr_requeues = $options{max_nr_requeues};
+    # Now we can start...
     my $stop = 0;
     local $SIG{INT} = local $SIG{TERM} = sub { print "stopping\n"; $stop = 1; };
     if ($chunk == 1) {
+        my $die_afterwards = 0;
         while(!$stop) {
             my $item = $self->claim_item();
             next if (!$item);
-            eval { $callback->($item->data); 1; } 
-            or do {
-                warn;
-                $onerror->($self, $item);
-            };
+            my $ok = eval { $callback->($item->data); 1; };
+            # check of we can delete the item from the busy queue
+            # if $count happens to be 0, we suppose we don't own the item
+            # anymore
             my $count = $self->mark_item_as_done($item);
-            warn("item was already removed from queue") if $count == 0;
+            if (!$ok) {
+                warn;
+                $onerror->($self, $item) if ($count);
+                if ($die) {
+                    $stop = 1;
+                    cluck("Stopping because of DieOnError\n");
+                }
+            };
         }
     }
     else {
+        my $die_afterwards = 0;
         while(!$stop) {
             my @items = $self->claim_items($chunk);
             next if (@items == 0);
-            for my $item (@items) {
-                eval { $callback->($item->data); 1; } 
-                or do {
+            my @done;
+            while (my $item = shift @items) {
+                my $ok = eval { $callback->($item->data); 1; };
+                if ($ok) {
+                    push @done, $item;
+                }
+                else {
                     warn;
-                    $onerror->($self, $item);
+                    my $count = $self->mark_item_as_done($item);
+                    $onerror->($self, $item) if ($count);
+                    if ($die) {
+                        cluck("Stopping because of DieOnError\n");
+                        $stop = 1;
+                        last;
+                    }
                 };
             }
-            my $count = $self->mark_items_as_done(@items);
+            my $count = $self->mark_items_as_done(@done);
             warn "not all items removed from busy queue ($count)\n"
-                if $count != @items;
+                if $count != @done;
+
+            # put back the claimed but not touched items
+            if (@items > 0) { print "not all items done!\n"; }
+            for my $item (@items) {
+                my $count = $self->mark_item_as_done($item);
+                $self->_requeue_at_front($item) if $count;
+            }
         }
     }
 }
+
 # methods to be used for cleanup script and Nagios checks
 # the methods read or remove items from the busy queue
-my %known_actions = map { $_ => undef } (qw(requeue burry drop));
+my %known_actions = map { $_ => undef } (qw(requeue fail drop));
 sub handle_expired_items {
-    my ($self, $timeout, $action) = @_;
+    my ($self, $timeout, $action, $options) = @_;
+    $options ||= {};
     $timeout ||= 10;
     die "unknown action\n" if !exists $known_actions{$action};
     my $conn = $self->_redis_conn;
-    my @sereal = $conn->lrange($self->_busy_queue, 0, -1);
+    my @serial = $conn->lrange($self->_busy_queue, 0, -1);
     my $time = time;
     my %timetable = 
         map { reverse split /-/,$_,2 }
         $conn->lrange($self->_time_queue, 0, -1);
-    my @match = grep { exists $timetable{$_} } @sereal;
+    my @match = grep { exists $timetable{$_} } @serial;
     my %match = map { $_ => undef } @match;
     my @timedout = grep { $time - $timetable{$_} >= $timeout } @match;
     my @log;
+
     # handle timed out items
+    local $SIG{INT} = local $SIG{TERM} = 
+        sub { print "stopping\n"; @timedout=(); };
     if ($action eq 'requeue') {
-        for my $sereal (@timedout) {
-            my $n = $conn->lrem( $self->_busy_queue, 1, $sereal);
+        for my $serial (@timedout) {
+            my $n = $conn->lrem( $self->_busy_queue, 1, $serial);
             if ($n) {
                 my $item = Queue::Q::ReliableFIFO::Item->new(
-                    _serialized => $sereal);
+                    _serialized => $serial);
                 $item->inc_nr_requeues();
                 $conn->lpush($self->queue_name, $item->_serialized);
                 push @log, $item;
             }
         }
     }
-    elsif ($action eq 'burry') {
-        for my $sereal (@timedout) {
-            my $n = $conn->lrem( $self->_busy_queue, 1, $sereal);
+    elsif ($action eq 'fail') {
+        for my $serial (@timedout) {
+            my $n = $conn->lrem( $self->_busy_queue, 1, $serial);
             if ($n) {
-                $conn->lpush($self->burry_queue, $sereal);
+                $conn->lpush($self->failed_queue, $serial);
                 push @log, 
-                    Queue::Q::ReliableFIFO::Item->new(_serialized => $sereal);
+                    Queue::Q::ReliableFIFO::Item->new(_serialized => $serial);
             }
         }
     }
     elsif ($action eq 'drop') {
-        for my $sereal (@timedout) {
-            my $n = $conn->lrem( $self->_busy_queue, 1, $sereal);
+        for my $serial (@timedout) {
+            my $n = $conn->lrem( $self->_busy_queue, 1, $serial);
             push @log, Queue::Q::ReliableFIFO::Item->new(
-                                _serialized => $sereal) if ($n);
+                                _serialized => $serial) if ($n);
         }
     }
 
@@ -257,12 +315,14 @@ sub handle_expired_items {
         keys %timetable;
     # put in the items of latest scan that did not timeout
     $newtimetable{$_} = $time 
-        for (grep { !exists $newtimetable{$_} } @sereal);
+        for (grep { !exists $newtimetable{$_} } @serial);
     $conn->multi;
     $conn->del($self->_time_queue);
     $conn->lpush($self->_time_queue, join('-',$newtimetable{$_},$_))
         for (keys %newtimetable);
     $conn->exec;
+    #FIXME the log info should also show what is done with the items
+    # (e.g. dropped after requeue limit).
     return @log;
 }
 1;
@@ -293,6 +353,7 @@ Queue::Q::ReliableFIFO::Redis - In-memory Redis implementation of the ReliableFI
   $q->consumer(sub { my $data = shift; print 'Received: ', Dumper($data); });
 
   # Cleanup script
+  my $action = 'requeue';
   while (1) {
       my @handled_items = $q->handle_expired_items($timeout, $action);
       for my $item (@handled_items) {
@@ -310,8 +371,10 @@ Queue::Q::ReliableFIFO::Redis - In-memory Redis implementation of the ReliableFI
 
   # Obsolete (consumer)
   my $item = $q->claim_item;
+  my @items= $q->claim_items(100);
   my $foo  = $item->data;
   $q->mark_item_as_done($item);
+  $q->mark_items_as_done(@items);
 
 =head1 DESCRIPTION
 
@@ -339,42 +402,64 @@ you may pass in a hash reference of options that are valid
 for the constructor of the L<Redis> module. This can be
 passed in as the C<redis_options> parameter.
 
-=head2 consume(\&callback, %options)
+=head2 consume(\&callback, $action, %options)
 
 This method is called by the consumer to consume the items of a
 queue. For each item in the queue, the callback function will be
 called. The function will receive that data of the queued item
 as parameter.
 
-=head3 options B<OnError>
-
-This method can handle failures (die's) of the function in four ways:
+The $action parameter is applied when the callback function returns
+a "die". Allowed values are:
 
 =over
 
-=item * B<die>. Die on failures. The item will stay in the busy queue.
-(If there is a cleanup job, the item might be rescheduled.)
-This is the default.
+=item * B<requeue>. I.e. do it again, the item will be put at the
+tail of the queue. The requeue_limit property is the queue indicates 
+the limit to how many times an item can be requeued.
+The default is 5 times. You can change that by setting by calling
+the set_queue_limit() method or by passing the property to the
+constructor. When the requeue limit is reached, the item will be dropped.
 
-=item * B<ignore>. Ignore the error, consider as processed.
+=item * B<fail>. Put the item aside in another queue. Needs manual
+intervention to reschedule. Or a cronjob to do that.
 
-=item * B<requeue>. Re-enqueu the item so that it can be tried again.
-
-=item * B<burry>. Put the item aside in a burry queue. It requires
-manual action to reschedule these items.
+=item * B<drop>. Forget about it.
 
 =back
 
-To select a failure mode, use the OnError option, e.g.
+=head3 option B<Chunk>
 
-    $q->consume(\&callback, OnError => 'die');
+The Chunk option is used to set a chunk size for number of items
+to claim and to mark as done in one go. This helps to fight latency.
 
-=head3 option B<max_nr_requeues>
+=head3 option B<DieOnError>
 
-In case of OnError => 'requeue', you can limit how often the item
-will be requeued. Value "undef" means unlimited (Default).
-When the maximum number is reached, the item will be considered as being
-processed.
+If this option has a true value, the consumer will stop when the 
+callback function returns a "die" call. Default "false".
+
+Example:
+
+    $q->consume(\&callback, 'requeue');
+
+=head2 @item_obj = $q->handle_expired_items($timeout, $action [, %options]);
+
+This method can be used by a cleanup job that ensures that items don't
+stick forever in the B<busy> status. When an item has been in this status 
+for $timeout seconds, the action specified by the $action will be done.
+The $action parameter is the same as with the consume() method.
+
+The method returns item object of type L<Queue::Q::ReliableFIFO::Item>
+which has the item data as well as the time when it was queued at the first
+time, how often it was requeued.
+
+The optional %options parameter can be used to limit the amount of requeues:
+
+    $q->handle_expired_items(60, 'requeue');
+
+In that case an item will be requeued 5 times at most. After that the item
+will be dropped. The cleanup script can log this together with the item data
+by using the returned item objects.
 
 =head1 AUTHOR
 
