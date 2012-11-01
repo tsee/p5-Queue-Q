@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 package Queue::Q::ReliableFIFO::CLI;
 use strict;
 use Redis;
