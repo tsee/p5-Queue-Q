@@ -6,7 +6,7 @@ use Redis;
 use Queue::Q::ReliableFIFO::Redis;
 use Class::XSAccessor {
     constructor => 'new',
-    getters => [qw(conn level prompt queue type redis server port)],
+    getters => [qw(conn level prompt queue type redis server port db)],
     setters => { 
         set_conn => 'conn',
         set_prompt => 'prompt',
@@ -15,6 +15,7 @@ use Class::XSAccessor {
         set_redis => 'redis',
         set_server => 'server',
         set_port => 'port',
+        set_db => 'db',
     },
 };
 
@@ -30,10 +31,14 @@ sub open {
     my ($self, %params) = @_;
     $params{server} || die "missing server\n";
     $params{port}   ||= 6379;
+    $params{db}     ||= 0;
     $self->set_conn( Redis->new(
         server => $params{server} . ':' . $params{port}));
+    $self->conn->select($params{db})
+        if $self->conn && exists $params{db} && $params{db};
     $self->set_server($params{server});
     $self->set_port($params{port});
+    $self->set_db($params{db});
     $self->set_level($self->conn ? 1 : 0);
 }
 sub close {
@@ -152,6 +157,10 @@ sub rm {
     }
     return $count;
 }
+sub who {
+    my $self = shift;
+    return $self->conn->client_list();
+}
 sub cleanup {
     my ($self, $timeout, $action) = @_;
     die if $self->level < 2;
@@ -168,19 +177,20 @@ sub set_level {
     my $l = $self->{level} = $level;
     my $s = $self->server;
     my $p = $self->port;
+    my $d = $self->db;
     my $q = $self->queue;
     my $t = $self->type;
     my $prompt = '';
     if    ($l == 0) { $prompt = ''; }
-    elsif ($l == 1) { $prompt = "$s:$p"; }
-    elsif ($l == 2) { $prompt = "$self->{server}:$self->{port} \[/$q\]"; }
-    elsif ($l == 3) { $prompt = "$self->{server}:$self->{port} \[/$q/$t\]"; }
+    elsif ($l == 1) { $prompt = "$s:$p (db=$d)"; }
+    elsif ($l == 2) { $prompt = "$s:$p (db=$d) \[/$q\]"; }
+    elsif ($l == 3) { $prompt = "$s:$p (db=$d) \[/$q/$t\]"; }
     else { die "unknown level\n" }
     $self->set_prompt($prompt);
 }
 sub show_prompt {
     my $self = shift;
-    return 'ReliableFIFO-', $self->prompt, " > ";
+    return 'FIFO:', $self->prompt, "-> ";
 }
 1;
 
@@ -216,6 +226,7 @@ my %commands = map { $_ => undef } (qw(
     close
     mv
     rm
+    who
     quit
     exit
     hist
@@ -223,13 +234,13 @@ my %commands = map { $_ => undef } (qw(
     ?
 ));
 my %help = (
-    0 => ["open <server> [<port>]"],
+    0 => ["open <server> [<port> [<db>]]"],
     1 => ["ls", "cd <name>"],
     2 => ["ls", "cd <name>", "mv <name-from> <name-to> [<limit>]",
             "cleanup <timeout> <(requeue|fail|drop)>"],
     3 => ["ls", "cd ..", "rm [<limit>]"],
 );
-push(@{$help{$_}}, ("?", "hist", "quit")) for (0 .. 3);
+push(@{$help{$_}}, ("?", "who", "hist", "quit")) for (0 .. 3);
 
 ReadMode 4;
 print "Type '?' for help\n";
@@ -292,7 +303,9 @@ while(1) {
         if (exists $commands{$cmd}) {
             eval {
                 if ($cmd eq "open") {
-                    $cli->open(server => $args[0], port => $args[1]);
+                    $cli->open(server => $args[0],
+                               port => $args[1],
+                               db => $args[2]);
                 }
                 elsif ($cmd eq "cd") {
                     $cli->cd(@args);
@@ -305,6 +318,9 @@ while(1) {
                 }
                 elsif ($cmd eq 'ls') {
                     print join("\n", $cli->ls(@args)), "\n";
+                }
+                elsif ($cmd eq 'who') {
+                    print join("\n", $cli->who(@args)), "\n";
                 }
                 elsif ($cmd eq 'cleanup') {
                     my $n = $cli->cleanup(@args);
@@ -346,6 +362,7 @@ sub quit {
     if ($cli->level >= 1) {
         $conf{server} = $cli->server;
         $conf{port} = $cli->port;
+        $conf{db} = $cli->db;
         $conf{queue} = $cli->queue if $cli->level >= 2;
         $conf{type} = $cli->type if $cli->level >= 3;
     }
@@ -353,7 +370,7 @@ sub quit {
     $conf{history} = \@history;
     write_file($conf_file, encode_json(\%conf));
 
-    exit;
+    exit 0;
 }
 
 __END__
