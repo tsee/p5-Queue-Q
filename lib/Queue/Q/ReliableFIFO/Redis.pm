@@ -41,17 +41,19 @@ sub new {
         db => $params{db} || 0,
         _redis_conn => undef,
     } => $class);
-    $self->{_main_queue} = $params{queue_name} . "_main";
-    $self->{_busy_queue} = $params{queue_name} . "_busy";
+    $self->{_main_queue}   = $params{queue_name} . "_main";
+    $self->{_busy_queue}   = $params{queue_name} . "_busy";
     $self->{_failed_queue} = $params{queue_name} . "_failed";
-    $self->{_time_queue} = $params{queue_name} . "_time";
+    $self->{_time_queue}   = $params{queue_name} . "_time";
     $self->{requeue_limit} ||= 5;
 
-    $self->{_redis_conn} = Redis->new(
-        %{$params{redis_options} || {}},
-        encoding => undef, # force undef for binary data
-        server => join(":", $self->server, $self->port),
-    );
+    $self->{_redis_conn} = exists $params{_redis_conn} 
+        ? $params{_redis_conn} 
+        : Redis->new(
+            %{$params{redis_options} || {}},
+            encoding => undef, # force undef for binary data
+            server => join(":", $self->server, $self->port),
+        );
 
     $self->_redis_conn->select($self->db) if $self->db;
 
@@ -92,6 +94,19 @@ sub __requeue {
     else {
         $self->_redis_conn->rpush($self->_main_queue, @serial);
     }
+}
+
+sub requeue_failed_items {
+    my $self = shift;
+    my $limit = shift || 0;
+    my $count = 0;
+    while($self->rpoplpush(
+        $self->_failed_queue,
+        $self->_main_queue)) {
+        $count++;
+        last if $limit && $count >= $limit;
+    }
+    return $count;
 }
 
 sub mark_as_failed {
@@ -274,6 +289,7 @@ sub handle_expired_items {
     my ($self, $timeout, $action, $options) = @_;
     $options ||= {};
     $timeout ||= 10;
+    die "timeout should be a number> 0\n" if !int($timeout);
     die "unknown action\n" if !exists $known_actions{$action};
     my $conn = $self->_redis_conn;
     my @serial = $conn->lrange($self->_busy_queue, 0, -1);
@@ -376,6 +392,7 @@ Queue::Q::ReliableFIFO::Redis - In-memory Redis implementation of the ReliableFI
       }
       sleep(60);
   }
+  $q->requeue_failed_items();
 
   # Nagios?
   $q->get_length_queue();
@@ -472,6 +489,13 @@ The optional %options parameter can be used to limit the amount of requeues:
 In that case an item will be requeued 5 times at most. After that the item
 will be dropped. The cleanup script can log this together with the item data
 by using the returned item objects.
+
+=head2 my $count = $q->requeue_failed_items([ $limit ]);
+
+This method will move items from the failed queue to the
+working queue. The $limit parameter is optional and can be used to move
+only a subset to the working queue.
+The number of items actually moved will be the return value.
 
 =head1 AUTHOR
 
