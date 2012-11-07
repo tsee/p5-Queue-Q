@@ -91,7 +91,7 @@ sub cd {
         if ($found) {
             $self->set_queue($queue);
             $self->set_redis(Queue::Q::ReliableFIFO::Redis->new(
-                _redis_conn => $self->conn,
+                redis_conn => $self->conn,
                 server      => $self->server,
                 port        => $self->port,
                 queue_name  => $queue));
