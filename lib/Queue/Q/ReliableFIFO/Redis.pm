@@ -416,7 +416,33 @@ an implementation based on Redis.
 The data structures passed to C<enqueue_item> are serialized
 using JSON (cf. L<JSON::XS>), so
 any data structures supported by that can be enqueued.
+We use JSON because that is supported at the lua side as well (the cjson
+library).
 
+The implementation is kept very lightweight at the Redis level
+in order to get a hight throughput. With this implementation it is
+easy to get a throughput of 10,000 items per second on a single core.
+
+At the Redis side this is basically done at the following events:
+
+=over
+
+=item putting an item: lput
+
+=item getting an item: (b)rpoplpush
+
+=item mark as done: lrem
+
+=item mark an item as failed: lrem + lpush
+
+=item requeue an item: lrem + lpush (or lrem + rpush)
+
+=back
+
+Note that only exceptions need multiple commands.
+
+To detect hanging items, a cronjob is needed, looking at how long items
+stay in the busy status.
 
 =head1 METHODS
 
@@ -459,7 +485,7 @@ C<Default value is 1>.
 after which an item is supposed to get stuck. After this time a follow
 up strategy should be applied. (Normally done by the handle_expired_items()
 Method, typically done by a cronjob).
-<CDefault value is 30>.
+C<Default value is 30>.
 
 =back
 
