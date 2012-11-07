@@ -2,6 +2,10 @@
 package Queue::Q::ReliableFIFO::CLI;
 use strict;
 use Redis;
+use Term::ReadKey;
+use Data::Dumper;
+use JSON::XS;
+use File::Slurp;
 
 use Queue::Q::ReliableFIFO::Redis;
 use Class::XSAccessor {
@@ -80,7 +84,7 @@ sub cd {
 
     if ($self->level == 1) {
         my $queue = shift;
-        my @q; push @q, "$queue$_" for (qw(_main _busy _time));
+        my @q; push @q, "$queue$_" for (qw(_main _busy _failed));
         my $found = 0;
         for (@q) {
             if ($self->conn->keys($_)) {
@@ -192,186 +196,194 @@ sub show_prompt {
     my $self = shift;
     return 'FIFO:', $self->prompt, "-> ";
 }
+
+sub run {
+    my $self = shift;
+    $| = 1;
+
+    my @history;
+    my $his_pos = 0;
+
+    # take settings from previous session
+    my $conf_file = "$ENV{HOME}/.reliablefifo";
+    my %conf = ();
+    if (-f $conf_file) {
+        %conf = %{decode_json(read_file($conf_file))};
+        $self->open(server => $conf{server},  port => $conf{port})
+            if exists $conf{server} && exists $conf{port};
+        $self->cd($conf{queue}) if exists $conf{queue};
+        $self->cd($conf{type}) if exists $conf{type};
+        push(@history, @{$conf{history}}) if exists $conf{history};
+    }
+    my $quit = sub {
+        ReadMode 0;
+
+        # save setting for next session
+        my %conf = ();
+        if ($self->level >= 1) {
+            $conf{server} = $self->server;
+            $conf{port} = $self->port;
+            $conf{db} = $self->db;
+            $conf{queue} = $self->queue if $self->level >= 2;
+            $conf{type} = $self->type if $self->level >= 3;
+        }
+        splice(@history, 0, $#history-20) if $#history > 20; # limit history
+        $conf{history} = \@history;
+        write_file($conf_file, encode_json(\%conf));
+
+        exit 0;
+    };
+
+    my %commands = map { $_ => undef } (qw(
+        open
+        ls
+        cd
+        close
+        mv
+        rm
+        who
+        quit
+        exit
+        hist
+        cleanup
+        ?
+    ));
+    my %help = (
+        0 => ["open <server> [<port> [<db>]]"],
+        1 => ["ls", "cd <name>"],
+        2 => ["ls", "cd <name>", "mv <name-from> <name-to> [<limit>]",
+                "cleanup <timeout> <(requeue|fail|drop)>"],
+        3 => ["ls", "cd ..", "rm [<limit>]"],
+    );
+    push(@{$help{$_}}, ("?", "who", "hist", "quit")) for (0 .. 3);
+
+    ReadMode 4;
+    print "Type '?' for help\n";
+    print $self->show_prompt;
+
+    while(1) {
+        my $line;
+        push @history, '';
+        $his_pos = $#history;
+
+        # deal with the keyboard
+        while (1) {
+            my $c = ReadKey(1);
+            next if ! defined $c;
+            my $ord = ord $c;
+
+            if ($ord == 3 || $ord == 4) {   # ctrl-c, ctrl-d
+                print "\n";
+                $quit->();
+            }
+            elsif ($ord == 127) {
+                print "\r" , $self->show_prompt , ' ' x length($line);
+                $line = substr($line, 0, length($line)-1);
+                print "\r", $self->show_prompt, $line;
+            }
+            elsif ($ord == 27) {
+                my $a = ord(ReadKey (1));
+                if ($a == 91) {
+                    my $b = ord(ReadKey (1));
+                    if ($b == 65 || $b == 66) {
+                        # arrow keys up/down
+                        print "\r" , $self->show_prompt , ' ' x length($line);
+                        if ($b == 65) {  # up
+                            $history[$his_pos] = $line if $his_pos == $#history;
+                            $his_pos-- if $his_pos > 0;
+                        }
+                        else {
+                            $his_pos++ if $his_pos < $#history;;
+                        }
+                        $line = $history[$his_pos];
+                        print "\r" ,  $self->show_prompt , $line;
+                    }
+                } # else ignore
+            }
+            elsif ($ord == 10) { #LF
+                $his_pos = $#history;
+                $history[$his_pos] = $line;
+                print $c;
+                last;
+            }
+            else {
+                $line .= $c;
+                print $c;
+            }
+        }
+
+        # deal with the command
+        my ($cmd, @args) = split /\s+/, $line;
+        if ($cmd) {
+            if (exists $commands{$cmd}) {
+                eval {
+                    if ($cmd eq "open") {
+                        $self->open(server => $args[0],
+                                   port => $args[1],
+                                   db => $args[2]);
+                    }
+                    elsif ($cmd eq "cd") {
+                        $self->cd(@args);
+                    }
+                    elsif ($cmd eq "rm") {
+                        printf "%d items removed\n", $self->rm(@args);
+                    }
+                    elsif ($cmd eq "mv") {
+                        printf "%d items moved\n", $self->mv(@args);
+                    }
+                    elsif ($cmd eq 'ls') {
+                        print join("\n", $self->ls(@args)), "\n";
+                    }
+                    elsif ($cmd eq 'who') {
+                        print join("\n", $self->who(@args)), "\n";
+                    }
+                    elsif ($cmd eq 'cleanup') {
+                        my $n = $self->cleanup(@args);
+                        printf "%d items affected\n", $n;
+                        print "Try again after <timeout> seconds\n" if ($n ==0);
+                    }
+                    elsif ($cmd eq 'close') {
+                        $self->close(), "\n";
+                    }
+                    elsif ($cmd eq 'quit' || $cmd eq 'exit') {
+                        $quit->();
+                    }
+                    elsif ($cmd eq 'hist') {
+                        print "\t", join("\n\t", @history), "\n";
+                    }
+                    elsif ($cmd eq '?') {
+                        print "available commands at this level:\n\t",
+                            join("\n\t", @{$help{$self->level||0}}), "\n";
+                    }
+                    1;
+                }
+                or do {
+                    print "$@\n";
+                }
+            }
+            else {
+                print "unknown command $cmd\n";
+            }
+        }
+        print $self->show_prompt;
+    }
+    $quit->();
+}
+
 1;
-
-package main;
-use strict;
-use Term::ReadKey;
-use Data::Dumper;
-use JSON::XS;
-use File::Slurp;
-
-my $cli = Queue::Q::ReliableFIFO::CLI->new();
-$| = 1;
-
-my @history;
-my $his_pos = 0;
-
-# take settings from previous session
-my $conf_file = "$ENV{HOME}/.reliablefifo";
-my %conf = ();
-if (-f $conf_file) {
-    %conf = %{decode_json(read_file($conf_file))};
-    $cli->open(server => $conf{server},  port => $conf{port})
-        if exists $conf{server} && exists $conf{port};
-    $cli->cd($conf{queue}) if exists $conf{queue};
-    $cli->cd($conf{type}) if exists $conf{type};
-    push(@history, @{$conf{history}}) if exists $conf{history};
-}
-
-my %commands = map { $_ => undef } (qw(
-    open
-    ls
-    cd
-    close
-    mv
-    rm
-    who
-    quit
-    exit
-    hist
-    cleanup
-    ?
-));
-my %help = (
-    0 => ["open <server> [<port> [<db>]]"],
-    1 => ["ls", "cd <name>"],
-    2 => ["ls", "cd <name>", "mv <name-from> <name-to> [<limit>]",
-            "cleanup <timeout> <(requeue|fail|drop)>"],
-    3 => ["ls", "cd ..", "rm [<limit>]"],
-);
-push(@{$help{$_}}, ("?", "who", "hist", "quit")) for (0 .. 3);
-
-ReadMode 4;
-print "Type '?' for help\n";
-print $cli->show_prompt;
-
-while(1) {
-    my $line;
-    push @history, '';
-    $his_pos = $#history;
-
-    # deal with the keyboard
-    while (1) {
-        my $c = ReadKey(1);
-        next if ! defined $c;
-        my $ord = ord $c;
-
-        if ($ord == 3 || $ord == 4) {   # ctrl-c, ctrl-d
-            print "\n";
-            quit();
-        }
-        elsif ($ord == 127) {
-            print "\r" , $cli->show_prompt , ' ' x length($line);
-            $line = substr($line, 0, length($line)-1);
-            print "\r", $cli->show_prompt, $line;
-        }
-        elsif ($ord == 27) {
-            my $a = ord(ReadKey (1));
-            if ($a == 91) {
-                my $b = ord(ReadKey (1));
-                if ($b == 65 || $b == 66) {
-                    # arrow keys up/down
-                    print "\r" , $cli->show_prompt , ' ' x length($line);
-                    if ($b == 65) {  # up
-                        $history[$his_pos] = $line if $his_pos == $#history;
-                        $his_pos-- if $his_pos > 0;
-                    }
-                    else {
-                        $his_pos++ if $his_pos < $#history;;
-                    }
-                    $line = $history[$his_pos];
-                    print "\r" ,  $cli->show_prompt , $line;
-                }
-            } # else ignore
-        }
-        elsif ($ord == 10) { #LF
-            $his_pos = $#history;
-            $history[$his_pos] = $line;
-            print $c;
-            last;
-        }
-        else {
-            $line .= $c;
-            print $c;
-        }
-    }
-
-    # deal with the command
-    my ($cmd, @args) = split /\s+/, $line;
-    if ($cmd) {
-        if (exists $commands{$cmd}) {
-            eval {
-                if ($cmd eq "open") {
-                    $cli->open(server => $args[0],
-                               port => $args[1],
-                               db => $args[2]);
-                }
-                elsif ($cmd eq "cd") {
-                    $cli->cd(@args);
-                }
-                elsif ($cmd eq "rm") {
-                    printf "%d items removed\n", $cli->rm(@args);
-                }
-                elsif ($cmd eq "mv") {
-                    printf "%d items moved\n", $cli->mv(@args);
-                }
-                elsif ($cmd eq 'ls') {
-                    print join("\n", $cli->ls(@args)), "\n";
-                }
-                elsif ($cmd eq 'who') {
-                    print join("\n", $cli->who(@args)), "\n";
-                }
-                elsif ($cmd eq 'cleanup') {
-                    my $n = $cli->cleanup(@args);
-                    printf "%d items affected\n", $n;
-                    print "Try again after <timeout> seconds\n" if ($n ==0);
-                }
-                elsif ($cmd eq 'close') {
-                    $cli->close(), "\n";
-                }
-                elsif ($cmd eq 'quit' || $cmd eq 'exit') {
-                    quit();
-                }
-                elsif ($cmd eq 'hist') {
-                    print "\t", join("\n\t", @history), "\n";
-                }
-                elsif ($cmd eq '?') {
-                    print "available commands at this level:\n\t",
-                        join("\n\t", @{$help{$cli->level||0}}), "\n";
-                }
-                1;
-            }
-            or do {
-                print "$@\n";
-            }
-        }
-        else {
-            print "unknown command $cmd\n";
-        }
-    }
-    print $cli->show_prompt;
-}
-quit();
-
-sub quit {
-    ReadMode 0;
-
-    # save setting for next session
-    %conf = ();
-    if ($cli->level >= 1) {
-        $conf{server} = $cli->server;
-        $conf{port} = $cli->port;
-        $conf{db} = $cli->db;
-        $conf{queue} = $cli->queue if $cli->level >= 2;
-        $conf{type} = $cli->type if $cli->level >= 3;
-    }
-    splice(@history, 0, $#history-20) if $#history > 20; # limit history
-    $conf{history} = \@history;
-    write_file($conf_file, encode_json(\%conf));
-
-    exit 0;
-}
 
 __END__
 
+=head1 NAME
+
+Queue::Q::ReliableFIFO::CLI - Command line interface to queues in Redis
+
+=head1 DESCRIPTION
+
+A command line interface can be started by
+
+    perl -MQueue::Q::ReliableFIFO::CLI \
+        -e 'Queue::Q::ReliableFIFO::CLI->new->run()'
+
+You can put that in a file e.g. called 'fifo-cli' and put that file
+in your PATH.
