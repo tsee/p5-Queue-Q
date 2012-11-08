@@ -149,7 +149,7 @@ sub mv {
 sub rm {
     my ($self, $dir, $limit) = @_;
     my @dir = $self->newpath($dir);
-    die if (@dir != 2);
+    die "not a complete path" if (@dir != 2);
     my $redisname = join '_', @dir;
     my $conn = $self->conn;
     my $count = 0;
@@ -383,3 +383,51 @@ in your PATH.
 The last state of the cli session is saved in $ENV{HOME}/.reliablefifo
 (as JSON). When restarting the cli, the previous context will be
 reloaded, i.e. connection, directory and history
+
+The command a in unix style, like "ls", "cd", "rm" and "mv". Press "?"
+to get a list of available commands. A directory structure is emulated
+in which the highest level is the queue name and the second level is
+a type of queue, i.e. queue with busy items, queue with failed items and
+main queue with waiting items.
+
+The "mv" and "rm" resp. move and remove items. The commands accept an
+extra parameter to limit the number of items they handle.
+
+Example:
+
+    [herald@aap redis]$ fifo-cli
+    Type '?' for help
+    FIFO:-> open localhost
+    FIFO:localhost:6379 (db=0) [ / ]-> ls
+    mytest
+    FIFO:localhost:6379 (db=0) [ / ]-> cd mytest
+    FIFO:localhost:6379 (db=0) [ /mytest ]-> ls
+       main: 4054 items
+       busy: 0 items
+     failed: 2 items
+    FIFO:localhost:6379 (db=0) [ /mytest ]-> ls failed
+    {"b":{"k":9,"x":783348.75271916,"s":"bgky"},"t":1352319296}
+    {"b":{"k":10,"x":574480.695396417,"s":"irzd"},"t":1352319296}
+    FIFO:localhost:6379 (db=0) [ /mytest ]-> mv failed main  
+    2 items moved
+    FIFO:localhost:6379 (db=0) [ /mytest ]-> ls
+       main: 4056 items
+       busy: 0 items
+     failed: 0 items
+    FIFO:localhost:6379 (db=0) [ /mytest ]-> cd main
+    FIFO:localhost:6379 (db=0) [ /mytest/main ]-> ls
+    {"b":{"k":11,"x":664047.321063155,"s":"ptkx"},"t":1352319296}
+    {"b":{"k":12,"x":502226.272384469,"s":"yrqb"},"t":1352319296}
+    ...
+    FIFO:localhost:6379 (db=0) [ /mytest/main ]-> mv . ../failed 1
+    1 items moved
+    FIFO:localhost:6379 (db=0) [ /mytest/main ]-> cd ..
+    FIFO:localhost:6379 (db=0) [ /mytest ]-> ls
+       main: 4055 items
+       busy: 0 items
+     failed: 1 items
+
+
+=head1 AUTHOR
+
+Herald van der Breggen, E<lt>herald.vanderbreggen@booking.comE<gt>
