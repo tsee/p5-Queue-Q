@@ -79,20 +79,12 @@ sub new {
 
 sub enqueue_item {
     my $self = shift;
-    if (@_ == 1) {
-        my ($item) = Queue::Q::ReliableFIFO::Item->new(data => $_[0]);
-        return $self->redis_conn->lpush($self->_main_queue, $item->_serialized);
-    }
-    else {
-        return if not @_;
+    return if not @_;
 
-        my @serial = map { 
-            Queue::Q::ReliableFIFO::Item->new(data => $_)->_serialized } @_;
-
-        return $self->redis_conn->lpush(
-            $self->_main_queue,
-            @serial);
-    }
+    return $self->redis_conn->lpush(
+        $self->_main_queue,
+        map { Queue::Q::ReliableFIFO::Item->new(data => $_)->_serialized } @_
+    );
 }
 
 sub claim_item {
