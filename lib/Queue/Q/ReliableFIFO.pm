@@ -4,29 +4,27 @@ use warnings;
 
 use Carp qw(croak);
 
-
-# enqueue_item($single_item)
+# enqueue_item($item)
+# enqueue_item(@items)
 sub enqueue_item { croak("Unimplemented") }
-# enqueue_items(@list_of_items)
-sub enqueue_items { croak("Unimplemented") }
 
-# my $item_or_undef = claim_item()
+# my $item_or_undef = claim_item($n) # $n is number of items to claim
 sub claim_item { croak("Unimplemented") }
-# my (@items_or_undefs) = claim_items($n)
-sub claim_items { croak("Unimplemented") }
 
 # mark_item_as_done($item_previously_claimed)
+# mark_item_as_done(@item_previously_claimed)
 sub mark_item_as_done { croak("Unimplemented") }
-# mark_item_as_done(@items_previously_claimed)
-sub mark_items_as_done { croak("Unimplemented") }
 
 sub flush_queue { croak("Unimplemented") }
 
 # my $nitems = queue_length()
+# my $nitems = queue_length('busy')   # claimed items
+# my $nitems = queue_length('failed') # failed items
 sub queue_length { croak("Unimplemented") }
 
-# my $nclaimed_items = claimed_count()
-sub claimed_count { croak("Unimplemented") }
+# consume(\&callback)
+sub consume  { croak("Unimplemented") }
+
 
 1;
 __END__
