@@ -6,16 +6,16 @@ use Term::ReadKey;
 use Data::Dumper;
 use JSON::XS;
 use File::Slurp;
+use Carp qw(croak);
 
 use Queue::Q::ReliableFIFO::Redis;
 use Class::XSAccessor {
     constructor => 'new',
-    getters => [qw(conn level prompt queue type redis server port db)],
+    getters => [qw(conn prompt path redis server port db)],
     setters => { 
         set_conn => 'conn',
         set_prompt => 'prompt',
-        set_queue => 'queue',
-        set_type => 'type',
+        set_path => 'path',
         set_redis => 'redis',
         set_server => 'server',
         set_port => 'port',
@@ -23,10 +23,12 @@ use Class::XSAccessor {
     },
 };
 
-# level 0: not connected
-# level 1: connected
-# level 2: in queue context
-# level 3: in list (redis level) context
+# The path property has the following meaning:
+#
+# $path== undef -> not connected
+# @$path==0 -> /
+# @$path==1 -> /queue
+# @$path==2 -> /queue/type
 
 my @all_types = (qw(main busy failed ));
 my %type = map { $_ => undef } @all_types;
@@ -43,19 +45,45 @@ sub open {
     $self->set_server($params{server});
     $self->set_port($params{port});
     $self->set_db($params{db});
-    $self->set_level($self->conn ? 1 : 0);
+    $self->set_path($self->conn ? [] : undef);
 }
 sub close {
     my $self = shift;
     $self->set_conn(undef);
-    $self->set_level(0);
+    $self->set_path(undef);
+}
+sub newpath {
+    my ($self, $arg) = @_;
+    my @args = defined $arg ? split(/\//, $arg) : ();
+    if (! defined $self->path) {
+        croak("not connected");
+    }
+    my @path;
+    if (substr($arg,0,1) eq '/') {
+        @path = @args;
+        shift @path;
+    }
+    else {
+        @path = @{$self->path};
+        while (my $v = shift @args) {
+            if ($v eq '..') {
+                pop @path;
+            }
+            elsif ($v ne '.') {
+                push @path, $v;
+            }
+        }
+    }
+    return @path;
 }
 sub ls {
     my $self = shift;
-    if ($self->level == 0) {
-        die "not connected";
-    }
-    elsif ($self->level == 1) {
+    my $arg  = shift;
+    my @path = $self->newpath($arg);
+    my $level= @path;
+    my ($queue, $type) = @path;
+
+    if ($level == 0) {
         my %q = map { $_ => undef } 
                 map { s/_(?:main|busy|failed|time)$//; $_ } 
                 grep{ /_/ }
@@ -64,98 +92,68 @@ sub ls {
         my @q = sort keys %q;
         return @q;
     }
-    elsif ($self->level == 2) {
+    elsif ($level == 1) {
         return 
             map {  sprintf "%7s: %d items", 
-                        $_, int($self->conn->llen($self->queue . '_' . $_)) 
+                        $_, int($self->conn->llen($queue . '_' . $_)) 
             }
             @all_types;
     }
-    elsif ($self->level == 3) {
-        my $start = shift || -10;
-        my $n = shift || 9;
+    elsif ($level == 2) {
+        # show 10 items at the consumer side of the queue
+        my $start = -10;
+        my $n = 9;
         return reverse $self->conn->lrange(
-            $self->_redisname, $start, $start + $n);
+            $queue . "_$type", $start, $start + $n);
+    }
+    else {
+        print Dumper(\@path);
+        croak("never thought of this...");
     }
 }
 sub cd {
     my $self = shift;
-    die "not connected" if $self->level < 1;
+    my $arg  = shift;
+    my @path = $self->newpath($arg);
+    my @oldpath = @{$self->path};
 
-    if ($self->level == 1) {
-        my $queue = shift;
-        my @q; push @q, "$queue$_" for (qw(_main _busy _failed));
-        my $found = 0;
-        for (@q) {
-            if ($self->conn->keys($_)) {
-                $found = 1;
-                last;
-            }
-        }
-        if ($found) {
-            $self->set_queue($queue);
-            $self->set_redis(Queue::Q::ReliableFIFO::Redis->new(
-                redis_conn => $self->conn,
-                server      => $self->server,
-                port        => $self->port,
-                queue_name  => $queue));
-            $self->set_level(2);
-        }
-        else {
-            die "$queue not found";
-        }
+    if (defined $path[0] && $path[0] ne $oldpath[0]) {
+        $self->set_redis(Queue::Q::ReliableFIFO::Redis->new(
+            redis_conn => $self->conn,
+            server      => $self->server,
+            port        => $self->port,
+            queue_name  => $path[0]));
     }
-    elsif ($self->level == 2) {
-        my $type = shift;
-        if ($type eq '..') {
-            $self->set_level(1);
-            return;
-        }
-        if (exists $type{$type}) {
-            $self->set_type($type);
-            $self->set_level(3);
-        }
-        else { die "expected main|busy|time|failed" }
-    }
-    elsif ($self->level == 3) {
-        my $dir = shift;
-        if ($dir eq '..') {
-            $self->set_level(2);
-        }
-        else {
-            die "only cd .. allowed";
-        }
-    }
+    $self->set_path(\@path);
 }
 sub mv {
     my ($self, $from, $to, $limit) = @_;
-    if ($self->level == 2) {
-        my @d = split /\//,$from;
-        die "$d[0]? expected main|busy|time|failed" if !exists $type{$d[0]};
-        die "$to? expected main|busy|time|failed" if !exists $type{$to};
-        return $self->_move($d[0], $to, $limit);
-    }
-    else {
-        die "mv command not available at this level";
-    }
-}
-sub _move {
-    my ($self, $from, $to, $limit) = @_;
+    my @from = $self->newpath($from);
+    my @to   = $self->newpath($to);
+    die "$from[1]? expected main|busy|time|failed" if !exists $type{$from[1]};
+    die "$to[1]? expected main|busy|time|failed" if !exists $type{$to[1]};
+    die "Path length should be 2: " . join('/',@from) if @from != 2;
+    die "Path length should be 2: " . join('/',@to) if @to != 2;
+    die "from and to are same" if join('',@from) eq join('',@to);
+
     my $conn = $self->conn;
     my $count = 0;
-    $from = $self->_redisname($from);
-    $to   = $self->_redisname($to);
-    while ($conn->rpoplpush($from, $to)) {
+    my $redis_from = join('_', @from);
+    my $redis_to = join('_', @to);
+    while ($conn->rpoplpush($redis_from, $redis_to)) {
         $count++;
         last if ($limit && $count >= $limit);
     }
     return $count;
 }
 sub rm {
-    my ($self, $limit) = @_;
+    my ($self, $dir, $limit) = @_;
+    my @dir = $self->newpath($dir);
+    die if (@dir != 2);
+    my $redisname = join '_', @dir;
     my $conn = $self->conn;
     my $count = 0;
-    while ($conn->rpop($self->_redisname)) {
+    while ($conn->rpop($redisname)) {
         $count++;
         last if ($limit && $count >= $limit);
     }
@@ -167,34 +165,23 @@ sub who {
 }
 sub cleanup {
     my ($self, $timeout, $action) = @_;
-    die if $self->level < 2;
+    die "not connected" if !defined $self->path;
+    die "command not available here" if @{$self->path} < 1;
     my @items = $self->{redis}->handle_expired_items($timeout, $action);
     return scalar @items;
 }
-sub _redisname {
-    my ($self, $type) = @_;
-    $type ||= $self->type;
-    return $self->queue . '_' . $type;
-}
-sub set_level {
-    my ($self, $level) = @_;
-    my $l = $self->{level} = $level;
+sub show_prompt {
+    my $self = shift;
     my $s = $self->server;
     my $p = $self->port;
     my $d = $self->db;
-    my $q = $self->queue;
-    my $t = $self->type;
-    my $prompt = '';
-    if    ($l == 0) { $prompt = ''; }
-    elsif ($l == 1) { $prompt = "$s:$p (db=$d)"; }
-    elsif ($l == 2) { $prompt = "$s:$p (db=$d) \[/$q\]"; }
-    elsif ($l == 3) { $prompt = "$s:$p (db=$d) \[/$q/$t\]"; }
-    else { die "unknown level\n" }
-    $self->set_prompt($prompt);
-}
-sub show_prompt {
-    my $self = shift;
-    return 'FIFO:', $self->prompt, "-> ";
+    my $path = $self->path;
+    my $pathstr = defined $path ? '/' . join('/', @$path) : '';
+    my $prompt;
+    if (! defined $path) { $prompt = ''; }
+    else { $prompt = "$s:$p (db=$d) \[ $pathstr \]" }
+
+    return 'FIFO:', $prompt, "-> ";
 }
 
 sub run {
@@ -211,23 +198,24 @@ sub run {
         %conf = %{decode_json(read_file($conf_file))};
         $self->open(server => $conf{server},  port => $conf{port})
             if exists $conf{server} && exists $conf{port};
-        $self->cd($conf{queue}) if exists $conf{queue};
-        $self->cd($conf{type}) if exists $conf{type};
         push(@history, @{$conf{history}}) if exists $conf{history};
+        my ($queue, $type) = @{$conf{path}||[]};
+        $self->cd($queue) if $queue;
+        $self->cd($type) if $type;
     }
     my $quit = sub {
         ReadMode 0;
 
         # save setting for next session
         my %conf = ();
-        if ($self->level >= 1) {
+        if (defined $self->path) {
             $conf{server} = $self->server;
             $conf{port} = $self->port;
             $conf{db} = $self->db;
-            $conf{queue} = $self->queue if $self->level >= 2;
-            $conf{type} = $self->type if $self->level >= 3;
+            $conf{path} = $self->path;
         }
         splice(@history, 0, $#history-20) if $#history > 20; # limit history
+        pop @history;   # remove empty item
         $conf{history} = \@history;
         write_file($conf_file, encode_json(\%conf));
 
@@ -250,10 +238,13 @@ sub run {
     ));
     my %help = (
         0 => ["open <server> [<port> [<db>]]"],
-        1 => ["ls", "cd <name>"],
-        2 => ["ls", "cd <name>", "mv <name-from> <name-to> [<limit>]",
-                "cleanup <timeout> <(requeue|fail|drop)>"],
-        3 => ["ls", "cd ..", "rm [<limit>]"],
+        1 => [
+                "ls [<path>]",
+                "cd <path>",
+                "mv <name-from> <name-to> [<limit>]",
+                "cleanup <timeout> <(requeue|fail|drop)>", 
+                'rm <path> [<limit>]'
+             ],
     );
     push(@{$help{$_}}, ("?", "who", "hist", "quit")) for (0 .. 3);
 
@@ -352,8 +343,9 @@ sub run {
                         print "\t", join("\n\t", @history), "\n";
                     }
                     elsif ($cmd eq '?') {
+                        my $connected = defined $self->path ? 1 : 0;
                         print "available commands at this level:\n\t",
-                            join("\n\t", @{$help{$self->level||0}}), "\n";
+                            join("\n\t", @{$help{$connected}}), "\n";
                     }
                     1;
                 }
@@ -387,3 +379,7 @@ A command line interface can be started by
 
 You can put that in a file e.g. called 'fifo-cli' and put that file
 in your PATH.
+
+The last state of the cli session is saved in $ENV{HOME}/.reliablefifo
+(as JSON). When restarting the cli, the previous context will be
+reloaded, i.e. connection, directory and history
