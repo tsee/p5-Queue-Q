@@ -38,7 +38,7 @@ my %queue_type = map { $_ => undef } (qw(main busy failed time));
 
 my %allowed_new_params = map { $_ => undef } (qw(
     server port db queue_name busy_expiry_time
-    claim_wait_time requeue_limit redis_conn redis_options));
+    claim_wait_timeout requeue_limit redis_conn redis_options));
 my %required_new_params = map { $_ => undef } (qw(server port queue_name));
 
 sub new {
@@ -98,7 +98,7 @@ sub enqueue_item {
 sub claim_item {
     my ($self, $n) = @_;
     $n ||= 1;
-    my $timeout = $self->claim_wait_timeout || 1;
+    my $timeout = $self->claim_wait_timeout;
     if ($n == 1) {
         # rpoplpush gives higher throughput than the blocking version
         # (i.e. brpoplpush). So use the blocked version only when we
@@ -476,9 +476,10 @@ Optional parameters are
 enter the queu again before ending up in the failed queue.
 C<Default value is 5>.
 
-=item B<claim_wait_time> (in seconds) to specify how long the
+=item B<claim_wait_timeout> (in seconds) to specify how long the
 claim_item() method is allowed to wait before it returns.
 This applies to the situation with an empty queue.
+A value of "0" means "wait forever".
 C<Default value is 1>.
 
 =item B<busy_expiry_time> to specify the threshold (in seconds)
