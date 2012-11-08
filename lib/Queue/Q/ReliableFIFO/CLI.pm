@@ -126,6 +126,15 @@ sub cd {
     }
     $self->set_path(\@path);
 }
+sub change_db {
+    my ($self, $db) = @_;
+    $db =  int($db);
+    my $ret = $self->conn->select($db);
+    if ($ret) {
+        $self->set_db($db);
+        $self->set_path([]);
+    }
+}
 sub mv {
     my ($self, $from, $to, $limit) = @_;
     my @from = $self->newpath($from);
@@ -153,9 +162,17 @@ sub rm {
     my $redisname = join '_', @dir;
     my $conn = $self->conn;
     my $count = 0;
-    while ($conn->rpop($redisname)) {
-        $count++;
-        last if ($limit && $count >= $limit);
+    if ($limit) {
+        while ($conn->rpop($redisname)) {
+            $count++;
+            last if ($count >= $limit);
+        }
+    }
+    else {
+        $self->conn->multi;
+        $self->conn->llen($redisname);
+        $self->conn->del($redisname);
+        ($count) = $self->conn->exec;
     }
     return $count;
 }
@@ -227,6 +244,7 @@ sub run {
         ls
         cd
         close
+        db
         mv
         rm
         who
@@ -243,7 +261,8 @@ sub run {
                 "cd <path>",
                 "mv <path-from> <path-to> [<limit>]",
                 "cleanup <timeout> <(requeue|fail|drop)>", 
-                'rm <path> [<limit>]'
+                'rm <path> [<limit>]',
+                'db <db>',
              ],
     );
     push(@{$help{$_}}, ("?", "who", "hist", "quit")) for (0 .. 3);
@@ -315,6 +334,9 @@ sub run {
                     }
                     elsif ($cmd eq "cd") {
                         $self->cd(@args);
+                    }
+                    elsif ($cmd eq "db") {
+                        $self->change_db(@args);
                     }
                     elsif ($cmd eq "rm") {
                         printf "%d items removed\n", $self->rm(@args);
