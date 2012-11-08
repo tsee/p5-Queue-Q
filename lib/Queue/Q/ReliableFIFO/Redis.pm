@@ -125,7 +125,8 @@ sub claim_item {
                 $conn->rpoplpush($qn, $bq, sub {
                     if (defined $_[0]) {
                         push @items, 
-                            Queue::Q::ReliableFIFO::Item->new(_serialized => $_[0]);
+                            Queue::Q::ReliableFIFO::Item->new(
+                                _serialized => $_[0]);
                     }
                 }) for 1 .. ($n-1);
                 $conn->wait_all_responses;
