@@ -9,8 +9,6 @@ use Queue::Q::ReliableFIFO::Lua;
 use Redis;
 use Data::Dumper;
 
-my  $DEFAULT_CLAIM_TIMEOUT = 1;
-
 use Class::XSAccessor {
     getters => [qw(
                 server
