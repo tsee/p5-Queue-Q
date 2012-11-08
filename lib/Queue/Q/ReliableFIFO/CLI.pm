@@ -241,7 +241,7 @@ sub run {
         1 => [
                 "ls [<path>]",
                 "cd <path>",
-                "mv <name-from> <name-to> [<limit>]",
+                "mv <path-from> <path-to> [<limit>]",
                 "cleanup <timeout> <(requeue|fail|drop)>", 
                 'rm <path> [<limit>]'
              ],
