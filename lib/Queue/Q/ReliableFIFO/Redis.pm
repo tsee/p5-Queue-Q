@@ -370,7 +370,8 @@ Queue::Q::ReliableFIFO::Redis - In-memory Redis implementation of the ReliableFI
 
   # Consumer:
   $q->consumer(\&callback);
-  $q->consumer(sub { my $data = shift; print 'Received: ', Dumper($data); });
+  $q->consumer(
+    sub { my $data = shift; print 'Received: ', Dumper($data); });
 
   # Cleanup script
   my $action = 'requeue';
@@ -437,7 +438,18 @@ stay in the busy status.
 
 =head1 METHODS
 
-All methods of L<Queue::Q::ReliableFIFO> plus:
+All methods of L<Queue::Q::ReliableFIFO>.
+
+B<Important note>: the methods that do redis commands, like
+enqueue_item(), claim_item() and 
+mark_item_as_done(), will throw an exception when connection to the
+Redis server is lost. You most probably want to run these with "B<eval>" 
+and handle the error situation.
+(The auto-reconnection
+functionality on the redis level does not make a change here, this is
+in fact only an auto-retry when connecting, not after that).
+
+Other methods are:
 
 =head2 new
 
@@ -481,7 +493,10 @@ C<Default value is 30>.
 
 =back
 
+=head2 enqueue_item(@items)
 
+Special for the Redis imlementation is that the C<return value> is 
+the length of the queue after the items are added.
 
 =head2 consume(\&callback, $action, %options)
 
