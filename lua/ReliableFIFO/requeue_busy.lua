@@ -5,6 +5,7 @@
 -- # ARGV[3] place to requeue in dest-queue:
 --      0: at producer side, 1: consumer side
 --      Note: failed items will always go to the tail of the failed queue
+-- # ARGV[4] OPTIONAL error message
 --
 --redis.log(redis.LOG_WARNING, "requeue_tail")
 if #KEYS ~= 1 then error('requeue_busy requires 1 key') end
@@ -43,6 +44,11 @@ if n > 0 then
             i.fc = 1
         else
             i.fc = i.fc + 1
+        end
+        if #ARGV == 4 then
+            i.error = ARGV[4]
+        else
+            i[error] = nil
         end
         local v=cjson.encode(i)
         redis.call('lpush', fail, v)

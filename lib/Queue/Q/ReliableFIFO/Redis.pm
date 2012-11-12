@@ -162,26 +162,39 @@ sub mark_item_as_done {
 
 sub unclaim  { 
     my $self = shift;
-    return $self->__requeue_busy(1, @_);
+    return $self->__requeue_busy(1, undef, @_);
 }
 
 sub requeue_busy {
     my $self = shift;
-    return $self->__requeue_busy(0, @_);
+    return $self->__requeue_busy(0, undef, @_);
+}
+sub requeue_busy_error {
+    my $self = shift;
+    my $error= shift;
+    return $self->__requeue_busy(0, $error, @_);
 }
 
 sub __requeue_busy  { 
     my $self = shift; 
     my $place = shift;  # 0: producer side, 1: consumer side
+    my $error = shift;  # error message
     my $n = 0;
-    $n += $self->{_lua}->call(
-        'requeue_busy',
-        1, 
-        $self->queue_name,
-        $_->_serialized, 
-        $self->requeue_limit,
-        $place
-    ) for @_;
+    eval {
+        $n += $self->{_lua}->call(
+            'requeue_busy',
+            1, 
+            $self->queue_name,
+            $_->_serialized, 
+            $self->requeue_limit,
+            $place,
+            $error
+        ) for @_;
+        1;
+    }
+    or do {
+        cluck("lua call went wrong! $@");
+    };
     return $n;
 }
 
@@ -228,8 +241,8 @@ sub consume {
     my %error_subs = (
         'drop'    => sub { my ($self, $item) = @_;
                             $self->mark_item_as_done($item); },
-        'requeue' => sub { my ($self, $item) = @_;
-                           $self->requeue_busy($item); },
+        'requeue' => sub { my ($self, $item, $error) = @_;
+                           $self->requeue_busy_error($error, $item); },
     );
     my $onerror = $error_subs{$error_action} 
         || croak("no handler for $error_action");
@@ -254,9 +267,10 @@ sub consume {
             next if (!$item);
             my $ok = eval { $callback->($item->data); 1; };
             if (!$ok) {
+                my $error = $@;
                 warn;
                 for (1 .. $MAX_RECONNECT) {    # retry if connection is lost
-                    eval { $onerror->($self, $item); 1; }
+                    eval { $onerror->($self, $item, $error); 1; }
                     or do {
                         last if $stop;
                         sleep 1;
@@ -297,9 +311,10 @@ sub consume {
                     push @done, $item;
                 }
                 else {
+                    my $error = $@;
                     warn;
                     for (1 .. $MAX_RECONNECT) {    # retry if connection is lost
-                        eval { $onerror->($self, $item); 1; }
+                        eval { $onerror->($self, $item, $error); 1; }
                         or do {
                             last if $stop;
                             sleep 1;
