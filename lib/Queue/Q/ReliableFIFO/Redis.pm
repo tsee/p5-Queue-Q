@@ -493,18 +493,16 @@ stay in the busy status.
 
 =head1 METHODS
 
-All methods of L<Queue::Q::ReliableFIFO>.
-
-B<Important note>: the methods that do redis commands, like
+B<Important note>:
+At the Redis level a lost connection will always throw an
+exception, even if auto-reconnect is switched on.
+As consequence, the methods that do redis commands, like
 enqueue_item(), claim_item() and 
-mark_item_as_done(), will throw an exception when connection to the
-Redis server is lost. You most probably want to run these with "B<eval>" 
-and handle the error situation.
-(The auto-reconnection
-functionality on the redis level does not make a change here, this is
-in fact only an auto-retry when connecting, not after that).
+mark_item_as_done(), will throw an exception when the connection to the
+Redis server is lost. The consume() method handles these exceptions.
+For other methods you need to catch and handle the exception.
 
-Other methods are:
+All methods of L<Queue::Q::ReliableFIFO>. Other methods are:
 
 =head2 new
 
@@ -573,9 +571,13 @@ the set_queue_limit() method or by passing the property to the
 constructor. When the requeue limit is reached, the item will go 
 to the failed queue.
 
+Note: by setting the queue_limit to "0" you can force the item to
+go to the "failed" status right away (without being requeued).
+
 =item * B<drop>. Forget about it.
 
 =back
+
 
 =head3 options
 
