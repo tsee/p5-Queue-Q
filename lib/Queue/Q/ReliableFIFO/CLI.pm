@@ -39,6 +39,7 @@ sub open {
     $params{port}   ||= 6379;
     $params{db}     ||= 0;
     $self->set_conn( Redis->new(
+        reconnect => 60,
         server => $params{server} . ':' . $params{port}));
     $self->conn->select($params{db})
         if $self->conn && exists $params{db} && $params{db};

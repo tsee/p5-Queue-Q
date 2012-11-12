@@ -99,7 +99,8 @@ sub claim_item {
             $self->redis_conn->brpoplpush(
                 $self->_main_queue, $self->_busy_queue, $timeout);
         return if !$v;
-        my ($item) = Queue::Q::ReliableFIFO::Item->new(_serialized => $v);
+        my $item;
+        eval { ($item) = Queue::Q::ReliableFIFO::Item->new(_serialized => $v);};
         return $item;
     }
     else {
@@ -107,29 +108,37 @@ sub claim_item {
         my $qn = $self->_main_queue;
         my $bq = $self->_busy_queue;
         my @items;
-        $conn->rpoplpush($qn, $bq, sub {
-            if (defined $_[0]) {
-                push @items, 
-                Queue::Q::ReliableFIFO::Item->new(_serialized => $_[0])
+        my $serial;
+        eval {
+            $conn->rpoplpush($qn, $bq, sub {
+                if (defined $_[0]) {
+                    push @items, 
+                    Queue::Q::ReliableFIFO::Item->new(_serialized => $_[0])
+                }
+            }) for 1..$n;
+            $conn->wait_all_responses;
+            if (@items == 0) {
+                # list seems empty, use the blocking version
+                $serial = $conn->brpoplpush($qn, $bq, $timeout);
+                if (defined $serial) {
+                    push(@items,
+                        Queue::Q::ReliableFIFO::Item->new(_serialized => $serial));
+                    undef $serial;
+                    $conn->rpoplpush($qn, $bq, sub {
+                        if (defined $_[0]) {
+                            push @items, 
+                                Queue::Q::ReliableFIFO::Item->new(
+                                    _serialized => $_[0]);
+                        }
+                    }) for 1 .. ($n-1);
+                    $conn->wait_all_responses;
+                }
             }
-        }) for 1..$n;
-        $conn->wait_all_responses;
-        if (@items == 0) {
-            # list seems empty, use the blocking version
-            my $serial = $conn->brpoplpush($qn, $bq, $timeout);
-            if (defined $serial) {
-                push(@items,
-                    Queue::Q::ReliableFIFO::Item->new(_serialized => $serial));
-                $conn->rpoplpush($qn, $bq, sub {
-                    if (defined $_[0]) {
-                        push @items, 
-                            Queue::Q::ReliableFIFO::Item->new(
-                                _serialized => $_[0]);
-                    }
-                }) for 1 .. ($n-1);
-                $conn->wait_all_responses;
-            }
+            1;
         }
+        or do {
+            return @items;  # return with whatever we have...
+        };
         return @items;
     }
 }
@@ -236,29 +245,50 @@ sub consume {
 
     # Now we can start...
     my $stop = 0;
+    my $MAX_RECONNECT = 60;
     local $SIG{INT} = local $SIG{TERM} = sub { print "stopping\n"; $stop = 1; };
     if ($chunk == 1) {
         my $die_afterwards = 0;
         while(!$stop) {
-            my $item = $self->claim_item();
+            my $item = eval { $self->claim_item(); };
             next if (!$item);
             my $ok = eval { $callback->($item->data); 1; };
             if (!$ok) {
                 warn;
-                $onerror->($self, $item);
+                for (1 .. $MAX_RECONNECT) {    # retry if connection is lost
+                    eval { $onerror->($self, $item); 1; }
+                    or do {
+                        last if $stop;
+                        sleep 1;
+                        next;
+                    };
+                    last;
+                }
                 if ($die) {
                     $stop = 1;
                     cluck("Stopping because of DieOnError\n");
                 }
             } else {
-                $self->mark_item_as_done($item);
+                for (1 .. $MAX_RECONNECT) {    # retry if connection is lost
+                    eval { $self->mark_item_as_done($item); 1; }
+                    or do {
+                        last if $stop;
+                        sleep 1;
+                        next;
+                    };
+                    last;
+                }
             }
         }
     }
     else {
         my $die_afterwards = 0;
         while(!$stop) {
-            my @items = $self->claim_item($chunk);
+            my @items;
+            eval { @items = $self->claim_item($chunk); 1; }
+            or do {
+                print "error with claim\n";
+            };
             next if (@items == 0);
             my @done;
             while (my $item = shift @items) {
@@ -268,7 +298,15 @@ sub consume {
                 }
                 else {
                     warn;
-                    $onerror->($self, $item);
+                    for (1 .. $MAX_RECONNECT) {    # retry if connection is lost
+                        eval { $onerror->($self, $item); 1; }
+                        or do {
+                            last if $stop;
+                            sleep 1;
+                            next;
+                        };
+                        last;
+                    }
                     if ($die) {
                         cluck("Stopping because of DieOnError\n");
                         $stop = 1;
@@ -276,7 +314,16 @@ sub consume {
                     }
                 };
             }
-            my $count = $self->mark_item_as_done(@done);
+            my $count = 0;
+            for (1 .. $MAX_RECONNECT) {
+                eval { $count += $self->mark_item_as_done(@done); 1; }
+                or do {
+                    last if $stop;
+                    sleep 1;
+                    next;
+                };
+                last;
+            }
             warn "not all items removed from busy queue ($count)\n"
                 if $count != @done;
 
@@ -284,7 +331,15 @@ sub consume {
             if (@items > 0) {
                 my $n = @items;
                 print "unclaiming $n items\n";
-                $self->unclaim($_) for @items;
+                for (1 .. $MAX_RECONNECT) {
+                    eval { $self->unclaim($_) for @items; 1; }
+                    or do {
+                        last if $stop;
+                        sleep 1;
+                        next;
+                    };
+                    last;
+                }
             }
         }
     }
