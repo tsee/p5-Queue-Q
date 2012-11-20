@@ -16,7 +16,7 @@ use constant {
 };
 
 my %opts;
-getopt('Hpwc?hv', \%opts);
+getopts('H:p:w:c:?hv', \%opts);
 
 #print Dumper(\%opts);
 usage() if ( exists $opts{h} || exists $opts{'?'} || !exists $opts{H});
