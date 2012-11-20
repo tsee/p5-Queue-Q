@@ -2,6 +2,11 @@
 #
 # Script to be used by Nagios to check queue length
 #
+# typical usage:
+#    nagios-redis-queue-length.pl -H 127.0.0.1 -q mytest_main -w 200 -c 5000
+#    nagios-redis-queue-length.pl -H 127.0.0.1 -q mytest_busy -w 50 -c 150
+#    nagios-redis-queue-length.pl -H 127.0.0.1 -q mytest_failed -w 30 -c 100
+#
 use strict;
 
 use Redis;

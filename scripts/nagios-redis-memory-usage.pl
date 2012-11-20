@@ -2,6 +2,9 @@
 #
 # Script to be used by Nagios to check Redis memory usage
 #
+# typical usage:
+#    nagios-redis-memory-usage.pl -H 127.0.0.1 -w 70 -c 90
+#
 use strict;
 
 use Redis;
