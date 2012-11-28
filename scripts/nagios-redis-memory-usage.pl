@@ -76,11 +76,13 @@ if ($perc < $opts{w}) {
     exit OK;
 }
 elsif ($perc < $opts{c}) {
-    print "$perc % is WARNING\n" if $VERBOSE;
+    printf "%s: memory usage is %.1f%% (threshold: %.1f)\n",
+        'Warning', $perc, $opts{w};
     exit WARNING;
 }
 else {
-    print "$perc % is CRITICAL\n" if $VERBOSE;
+    printf "%s: memory usage is %.1f%% (threshold: %.1f)\n",
+        'Critical', $perc, $opts{c};
     exit CRITICAL;
 }
 

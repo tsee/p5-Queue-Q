@@ -64,11 +64,13 @@ if ($len < $opts{w}) {
     exit OK;
 }
 elsif ($len < $opts{c}) {
-    print "$len is WARNING\n" if $VERBOSE;
+    printf "%s: queue length of %s is %d (threshold: %d)\n",
+        'Warning', $opts{q}, $len, $opts{w};
     exit WARNING;
 }
 else {
-    print "$len is CRITICAL\n" if $VERBOSE;
+    printf "%s: queue length of %s is %d (threshold: %d)\n",
+        'Critical', $opts{q}, $len, $opts{c};
     exit CRITICAL;
 }
 
