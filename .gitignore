@@ -13,3 +13,4 @@ pod2htm?.tmp
 *.swp
 *.swo
 redis_connect_data
+MANIFEST
