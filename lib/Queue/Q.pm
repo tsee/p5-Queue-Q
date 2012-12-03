@@ -96,6 +96,8 @@ distributed queue.
 
 =head1 AUTHOR
 
+Herald van der Breggen, E<lt>herald.vanderbreggen@booking.comE<gt>
+
 Steffen Mueller, E<lt>smueller@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
