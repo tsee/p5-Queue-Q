@@ -3,6 +3,7 @@ package # Hide from PAUSE
 use strict;
 use warnings;
 use Test::More;
+use Data::Dumper;
 
 sub test_naive_fifo {
     my $q = shift;
@@ -41,7 +42,14 @@ sub test_naive_fifo {
     is($q->queue_length, 0, "Queue len check 8");
 
     $item = $q->claim_item();
-    ok(!defined($item));
+    ok(!defined($item), "Getting undef from claim_item after queue is exhausted")
+        or diag(Dumper([$item]));
+
+    $q->flush_queue;
+    $item = $q->claim_item();
+    ok(!defined($item), "Getting undef from claim_item after queue is exhausted (after full flush)")
+        or diag(Dumper([$item]));
+
     is($q->queue_length, 0, "Queue len check 9");
 }
 
