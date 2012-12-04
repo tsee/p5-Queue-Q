@@ -454,3 +454,13 @@ Example:
 =head1 AUTHOR
 
 Herald van der Breggen, E<lt>herald.vanderbreggen@booking.comE<gt>
+
+=head1 COPYRIGHT AND LICENSE
+
+Copyright (C) 2012 by Herald van der Breggen
+
+This library is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself, either Perl version 5.8.1 or,
+at your option, any later version of Perl 5 you may have available.
+
+=cut

@@ -58,8 +58,11 @@ Queue::Q - Mix-and-match Queue Implementations and Backends
 
 =head1 DESCRIPTION
 
+B<This is an experimental module. The interface may change without notice.
+Before using it in production, please get in touch with the authors!>
+
 C<Queue::Q> is a collection of queue implementations each with multiple backends.
-Right now, it comes with two basic queues:
+Right now, it comes with three basic queues:
 
 =over 2
 
@@ -78,23 +81,42 @@ Strict ordering, slightly higher latency and lower throughput than the
 naive FIFO queue. Resilience against crashing workers when combined with
 a clean-up script that checks for old, claimed items.
 
+=item L<Queue::Q::ReliableFIFO>
+
+Similar interface to the C<ClaimFIFO> queue type, but only comes with a
+Redis-backed implementation now. Much faster for the basic operations
+then C<ClaimFIFO> since it doesn't always have to execute Lua scripts.
+See L<Queue::Q::ReliableFIFO> for details.
+
 =back
 
-Each of the two basic queues comes with two back-end implementations right now:
+The first two basic queues come with two back-end implementations each right now:
 One is a very simple, in-memory, single-process implementation L<Queue::Q::NaiveFIFO::Perl>
 and L<Queue::Q::ClaimFIFO::Perl> respectively. The other is an implementation
 based on Redis: L<Queue::Q::NaiveFIFO::Redis> and  L<Queue::Q::ClaimFIFO::Redis>.
 
-In addition two the two basic queue types, the distribution contains
+As noted above, the C<ReliableFIFO> queue has a Redis-based backend only for now.
+
+In addition to the basic queue types, the distribution contains
 L<Queue::Q::DistFIFO>, an implementation of a distributed queue
 that can use the basic queues as shards (but only one type of shard per
 distributed queue). It supports all operations of the basic queues, but
 does not enforce strict global ordering, but weak global and strict local
 ordering. In an early test, two mid-range servers running multiple instances
 of Redis each sustained 800k-1M transactions per second with a naive-type
-distributed queue.
+distributed queue. C<DistFIFO> has not been tested with the C<ReliableFIFO>
+implementation as building blocks yet!
+
+=head1 ACKNLOWLEDGMENT
+
+This module was originally developed for Booking.com.
+With approval from Booking.com, this module was generalized
+and put on CPAN, for which the authors would like to express
+their gratitude.
 
 =head1 AUTHOR
+
+Herald van der Breggen, E<lt>herald.vanderbreggen@booking.comE<gt>
 
 Steffen Mueller, E<lt>smueller@cpan.orgE<gt>
 
