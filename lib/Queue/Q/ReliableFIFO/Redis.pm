@@ -229,6 +229,21 @@ sub queue_length {
     return $len;
 }
 
+sub age {
+    my ($self, $type) = @_;
+    # this function returns age of oldest item in the queue (in seconds)
+    $type ||= 'main';
+    my $qn = $self->queue_name . "_$type";
+    croak("Unknown queue type $type") if ! exists $queue_type{$type};
+
+    # take oldest item
+    my ($serial) = $self->redis_conn->lrange($qn,-1,-1);
+    return 0 if ! $serial;    # empty queue, so age 0
+
+    my $item = Queue::Q::ReliableFIFO::Item->new(_serialized => $serial);
+    return time() - $item->time_created;
+}
+
 my %valid_options       = map { $_ => 1 } (qw(Chunk DieOnError));
 my %valid_error_actions = map { $_ => 1 } (qw(drop requeue ));
 
@@ -506,6 +521,16 @@ Note that only exceptions need multiple commands.
 To detect hanging items, a cronjob is needed, looking at how long items
 stay in the busy status.
 
+The queues are implemented as list data structures in Redis. The lists
+ave as name the queue name plus an extension. The extension is:
+
+ _main for the working queue
+ _busy for the list with items that are claimed but not finished
+ _failed for the items that failed
+
+There can also be a list with extension "_time" if a cronjob is monitoring
+how long items are in the busy list (see method handle_expired_items()).
+
 =head1 METHODS
 
 B<Important note>:
@@ -657,6 +682,12 @@ This method will move items from the failed queue to the
 working queue. The $limit parameter is optional and can be used to move
 only a subset to the working queue.
 The number of items actually moved will be the return value.
+
+-head2 my $age = $q->age($queue_name [,$type]);
+
+This methods returns the age (in seconds) of the oldest item in the queue.
+The second parameter ($type) is optional and can be main (default)
+
 
 =head1 AUTHOR
 
