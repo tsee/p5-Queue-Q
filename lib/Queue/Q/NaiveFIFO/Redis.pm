@@ -12,7 +12,6 @@ use Sereal::Decoder;
 
 our $SerealEncoder;
 our $SerealDecoder;
-my  $DEFAULT_CLAIM_TIMEOUT = 1;
 
 use Class::XSAccessor {
     getters => [qw(server port queue_name db _redis_conn)],
@@ -60,15 +59,8 @@ sub enqueue_items {
 }
 
 sub claim_item {
-    my ($self, $timeout) = @_;
-    $timeout ||= $DEFAULT_CLAIM_TIMEOUT;
-    # rpop has hight throughput than brpop, so we use brpop only when
-    # the queue is empty (i.e. rpop did not give back an item).
+    my ($self) = @_;
     my ($rv) = $self->_deserialize( $self->_redis_conn->rpop($self->queue_name) );
-    if (!$rv) {
-        my (undef, $v) = $self->_redis_conn->brpop($self->queue_name, $timeout);
-        $rv = $self->_deserialize($v);
-    }
     return $rv;
 }
 
