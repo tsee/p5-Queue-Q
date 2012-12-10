@@ -5,3 +5,7 @@ Revision history for Perl extension Queue::Q.
 
 0.02  Tue Dec  4 10:00:00 2012
   - added age() method to Queue:Q::ReliableFIFO::Redis
+
+0.03 Mon Dec 10 20:03:48 CET 2012
+  - added raw_items_* and memory_suage_perc() methods
+    to Queue:Q::ReliableFIFO::Redis
