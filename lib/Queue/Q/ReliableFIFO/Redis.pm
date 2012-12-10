@@ -222,9 +222,8 @@ sub flush_queue {
 
 sub queue_length {
     my ($self, $type) = @_;
-    $type ||= 'main';
+    __validate_type(\$type);
     my $qn = $self->queue_name . "_$type";
-    croak("Unknown queue type $type") if ! exists $queue_type{$type};
     my ($len) = $self->redis_conn->llen($qn);
     return $len;
 }
@@ -232,9 +231,8 @@ sub queue_length {
 sub age {
     my ($self, $type) = @_;
     # this function returns age of oldest item in the queue (in seconds)
-    $type ||= 'main';
+    __validate_type(\$type);
     my $qn = $self->queue_name . "_$type";
-    croak("Unknown queue type $type") if ! exists $queue_type{$type};
 
     # take oldest item
     my ($serial) = $self->redis_conn->lrange($qn,-1,-1);
@@ -242,6 +240,43 @@ sub age {
 
     my $item = Queue::Q::ReliableFIFO::Item->new(_serialized => $serial);
     return time() - $item->time_created;
+}
+
+sub raw_items_main {
+    my $self = shift;
+    return $self->_raw_items('main', @_);
+}
+sub raw_items_busy {
+    my $self = shift;
+    return $self->_raw_items('busy', @_);
+}
+sub raw_items_failed {
+    my $self = shift;
+    return $self->_raw_items('failed', @_);
+}
+sub _raw_items {
+    my ($self, $type, $n) = @_;
+    __validate_type(\$type);
+    $n ||= 0;
+    my $qn = $self->queue_name . "_$type";
+    return 
+        map { Queue::Q::ReliableFIFO::Item->new(_serialized => $_); }
+        $self->redis_conn->lrange($qn, -$n, -1);
+}
+
+sub __validate_type {
+    my $type = shift;
+    $$type ||= 'main';
+    croak("Unknown queue type $$type") if ! exists $queue_type{$$type};
+}
+
+sub memory_usage_perc {
+    my $self = shift;
+    my $conn = $self->redis_conn;
+    my $info = $conn->info('memory');
+    my $mem_used = $info->{used_memory};
+    my (undef, $mem_avail) = $conn->config('get', 'maxmemory');
+    return $mem_used * 100 / $mem_avail;
 }
 
 my %valid_options       = map { $_ => 1 } (qw(Chunk DieOnError));
@@ -475,8 +510,8 @@ Queue::Q::ReliableFIFO::Redis - In-memory Redis implementation of the ReliableFI
   $q->requeue_failed_items(10); # only the first 10 items
 
   # Nagios?
-  $q->get_length_queue();
-  $q->get_length_queue('failed');
+  $q->queue_length();
+  $q->queue_length('failed');
 
   # Depricated (consumer)
   my $item = $q->claim_item;
@@ -683,11 +718,29 @@ working queue. The $limit parameter is optional and can be used to move
 only a subset to the working queue.
 The number of items actually moved will be the return value.
 
--head2 my $age = $q->age($queue_name [,$type]);
+=head2 my $age = $q->age($queue_name [,$type]);
 
 This methods returns the age (in seconds) of the oldest item in the queue.
 The second parameter ($type) is optional and can be main (default)
 
+=head2 my @raw_items = $q->raw_items_busy( [$max_number] );
+
+Returns objects of type Queue::Q::RelaibleFIFO::Item from the busy list.
+You can limit the number of items by passing the limit to the method.
+
+=head2 my @raw_items = $q->raw_items_failed( [$max_number] );
+
+Similar to raw_items_busy() but for failed items.
+
+=head2 my @raw_items = $q->raw_items_main( [$max_number] );
+
+Similar to raw_items_busy() but for items in the working queue. Note that
+the main queue can be large, so a limit is strongly recommended here.
+
+=head2 my $memory_usage = $q->memory_usage_perc();
+
+Returns the memory usage percentage of the redis instance where the queue
+is located.
 
 =head1 AUTHOR
 
