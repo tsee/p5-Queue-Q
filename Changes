@@ -9,3 +9,6 @@ Revision history for Perl extension Queue::Q.
 0.03 Mon Dec 10 20:03:48 CET 2012
   - added raw_items_* and memory_suage_perc() methods
     to Queue:Q::ReliableFIFO::Redis
+
+0.04 Tue Dec 11 11:45:09 CET 2012
+  - EXEC_FILES correction in Makefile.PL
