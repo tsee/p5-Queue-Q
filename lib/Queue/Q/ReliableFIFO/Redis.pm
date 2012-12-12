@@ -318,7 +318,6 @@ sub consume {
             my $ok = eval { $callback->($item->data); 1; };
             if (!$ok) {
                 my $error = $@;
-                warn;
                 for (1 .. $MAX_RECONNECT) {    # retry if connection is lost
                     eval { $onerror->($self, $item, $error); 1; }
                     or do {
@@ -362,7 +361,6 @@ sub consume {
                 }
                 else {
                     my $error = $@;
-                    warn;
                     for (1 .. $MAX_RECONNECT) {    # retry if connection is lost
                         eval { $onerror->($self, $item, $error); 1; }
                         or do {
