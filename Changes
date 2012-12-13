@@ -12,3 +12,6 @@ Revision history for Perl extension Queue::Q.
 
 0.04 Tue Dec 11 11:45:09 CET 2012
   - EXEC_FILES correction in Makefile.PL
+
+0.05 Thu Dec 13 20:38:45 CET 2012
+  - MaxItems option for consume()
