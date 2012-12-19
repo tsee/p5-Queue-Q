@@ -276,6 +276,7 @@ sub memory_usage_perc {
     my $info = $conn->info('memory');
     my $mem_used = $info->{used_memory};
     my (undef, $mem_avail) = $conn->config('get', 'maxmemory');
+    return 100 if $mem_avail == 0; # if nothing is available, it's full!
     return $mem_used * 100 / $mem_avail;
 }
 
