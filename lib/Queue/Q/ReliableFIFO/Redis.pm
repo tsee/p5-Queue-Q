@@ -7,6 +7,7 @@ use parent 'Queue::Q::ReliableFIFO';
 use Queue::Q::ReliableFIFO::Item;
 use Queue::Q::ReliableFIFO::Lua;
 use Redis;
+use Time::HiRes;
 use Data::Dumper;
 
 use Class::XSAccessor {
@@ -280,7 +281,8 @@ sub memory_usage_perc {
     return $mem_used * 100 / $mem_avail;
 }
 
-my %valid_options       = map { $_ => 1 } (qw(Chunk DieOnError MaxItems));
+my %valid_options       = map { $_ => 1 } (qw(
+    Chunk DieOnError MaxItems ProcessAll Pause));
 my %valid_error_actions = map { $_ => 1 } (qw(drop requeue ));
 
 sub consume {
@@ -299,14 +301,21 @@ sub consume {
         || croak("no handler for $error_action");
 
     $options ||= {};
-    my $chunk = delete $options->{Chunk} || 1;
+    my $chunk       = delete $options->{Chunk} || 1;
     croak("Chunk should be a number > 0") if (! $chunk > 0);
-    my $die   = delete $options->{DieOnError} || 0;
-    my $maxitems = delete $options->{MaxItems} || -1;
+    my $die         = delete $options->{DieOnError} || 0;
+    my $maxitems    = delete $options->{MaxItems} || -1;
+    my $pause       = delete $options->{Pause} || 0;
+    my $process_all = delete $options->{ProcessAll} || 0;
+    croak("Option ProcessAll without Chunks does not make sense")
+        if $process_all && $chunk <= 1;
+    croak("Option Pause does without Chunks does not make sense")
+        if $pause && $chunk <= 1;
 
     for (keys %$options) {
         croak("Unknown option $_") if !$valid_options{$_};
     }
+    $pause *= 1e6;  # convert from seconds to microseconds
 
     # Now we can start...
     my $stop = 0;
@@ -351,34 +360,70 @@ sub consume {
         my $die_afterwards = 0;
         while(!$stop) {
             my @items;
+
+            # give queue some time to grow
+            Time::HiRes::usleep($pause) if $pause;
+
             eval { @items = $self->claim_item($chunk); 1; }
             or do {
                 print "error with claim\n";
             };
             next if (@items == 0);
             my @done;
-            while (my $item = shift @items) {
-                my $ok = eval { $callback->($item->data); 1; };
+            if ($process_all) {
+                # process all items in one call (option ProcessAll)
+                my $ok = eval { $callback->(map { $_->data } @items); 1; };
                 if ($ok) {
-                    push @done, $item;
+                    @done = splice @items;
                 }
                 else {
+                    # we need to call onerror for all items now
+                    @done = (); # consider all items failed
                     my $error = $@;
-                    for (1 .. $MAX_RECONNECT) {    # retry if connection is lost
-                        eval { $onerror->($self, $item, $error); 1; }
-                        or do {
-                            last if $stop;
-                            sleep 1;
-                            next;
-                        };
-                        last;
+                    while (my $item = shift @items) {
+                        for (1 .. $MAX_RECONNECT) {
+                            eval { $onerror->($self, $item, $error); 1; }
+                            or do {
+                                last if $stop; # items might stay in busy mode
+                                sleep 1;
+                                next;
+                            };
+                            last;
+                        }
+                        if ($die) {
+                            cluck("Stopping because of DieOnError\n");
+                            $stop = 1;
+                            last;
+                        }
                     }
-                    if ($die) {
-                        cluck("Stopping because of DieOnError\n");
-                        $stop = 1;
-                        last;
+                }
+            }
+            else {
+                # normal case: process items one by one
+                while (my $item = shift @items) {
+                    my $ok = eval { $callback->($item->data); 1; };
+                    if ($ok) {
+                        push @done, $item;
                     }
-                };
+                    else {
+                        my $error = $@;
+                        # retry if connection is lost
+                        for (1 .. $MAX_RECONNECT) {
+                            eval { $onerror->($self, $item, $error); 1; }
+                            or do {
+                                last if $stop;
+                                sleep 1;
+                                next;
+                            };
+                            last;
+                        }
+                        if ($die) {
+                            cluck("Stopping because of DieOnError\n");
+                            $stop = 1;
+                            last;
+                        }
+                    };
+                }
             }
             my $count = 0;
             for (1 .. $MAX_RECONNECT) {
@@ -673,6 +718,23 @@ This can be used to limit the consume method to process only a limited amount
 of items. This be useful in cases of memory leaks and restarting
 strategies with cron. Of course this comes with delays in handling the
 items.
+
+=item * B<Pause>.
+This can be used to give the queue some time to grow, so that more
+items at the time can be claimed. The value of Pause is in seconds and 
+can be a fraction of a second (e.g. 0.5).
+Default value is 0. This option only makes sense if
+larger Chunks are read from the queue (so together with option "Chunk").
+
+=item * B<ProcessAll>.
+This can be used to process all claimed items by one invocation of
+the callback function. The value of ProcessAll should be a true or false 
+value. Default value is "0". Note that this changes the @_ content of
+callback: normally the callback function is called with one item
+data structure, while in this case @_ will contain an array with item
+data structures.
+This  option only makes sense if larger Chunks are read from the queue
+(so together with option "Chunk").
 
 =back
 
