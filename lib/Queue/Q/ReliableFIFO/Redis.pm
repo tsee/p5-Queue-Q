@@ -315,7 +315,6 @@ sub consume {
     for (keys %$options) {
         croak("Unknown option $_") if !$valid_options{$_};
     }
-    $pause *= 1e6;  # convert from seconds to microseconds
 
     # Now we can start...
     my $stop = 0;
@@ -358,16 +357,19 @@ sub consume {
     }
     else {
         my $die_afterwards = 0;
+        my $t0 = Time::HiRes::time();
         while(!$stop) {
             my @items;
 
             # give queue some time to grow
-            Time::HiRes::usleep($pause) if $pause;
+            Time::HiRes::usleep(($pause - (Time::HiRes::time()-$t0))*1e6)
+                if $pause;
 
             eval { @items = $self->claim_item($chunk); 1; }
             or do {
                 print "error with claim\n";
             };
+            $t0 = Time::HiRes::time() if $pause; # only relevant for pause
             next if (@items == 0);
             my @done;
             if ($process_all) {
