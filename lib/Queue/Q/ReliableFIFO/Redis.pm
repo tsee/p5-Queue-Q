@@ -210,6 +210,13 @@ sub requeue_failed_items {
         $count);
 }
 
+sub get_and_flush_failed_items {
+    my $self = shift;
+    my @failures = $self->raw_items_failed();
+    $self->redis_conn->del($self->_failed_queue);;
+    return @failures;
+}
+
 sub flush_queue {
     my $self = shift;
     my $conn = $self->redis_conn;
@@ -789,6 +796,13 @@ This method will move items from the failed queue to the
 working queue. The $limit parameter is optional and can be used to move
 only a subset to the working queue.
 The number of items actually moved will be the return value.
+
+=head2 my @raw_failed_items = $q->get_and_flush_failed_items();
+
+This method will read all existing failed items and remove all failed
+items right after that.
+Typical use could be a cronjob that warns about failed items
+(e.g. via email) and cleans them up.
 
 =head2 my $age = $q->age($queue_name [,$type]);
 
