@@ -110,6 +110,10 @@ sub claim_item {
         my $bq = $self->_busy_queue;
         my @items;
         my $serial;
+        if ($n > 100) {
+            my ($l) = $self->redis_conn->llen($qn);
+            $n = $l if $l < $n;
+        }
         eval {
             $conn->rpoplpush($qn, $bq, sub {
                 if (defined $_[0]) {
