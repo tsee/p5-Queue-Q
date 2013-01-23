@@ -69,6 +69,10 @@ sub claim_items {
     $n ||= 1;
     my $conn = $self->_redis_conn;
     my $qn = $self->queue_name;
+    if ($n > 100) {
+        my ($l) = $self->_redis_conn->llen($qn);
+        $n = $l if $l < $n;
+    }
     my @elem;
     $conn->rpop($qn, sub {push @elem, $_[0]}) for 1..$n;
     $conn->wait_all_responses;
