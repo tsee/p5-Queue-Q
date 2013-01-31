@@ -28,3 +28,7 @@ Revision history for Perl extension Queue::Q.
     for ReliableFIFO and NaiveFIFO
   - mark_as done more efficient in RelaibleFIFO (lrem starts
     at the right side of the list).
+
+0.09 Thu Jan 31 17:12:11 CET 2013
+  - removed bug with handle_expired_items()
+  - added requeue_busy_item() and requeue_failed_item()
