@@ -170,6 +170,10 @@ sub unclaim  {
     return $self->__requeue_busy(1, undef, @_);
 }
 
+sub requeue_busy_item {
+    my ($self, $raw) = @_;
+    return $self->__requeue_item($self->_busy_queue, $raw);
+}
 sub requeue_busy {
     my $self = shift;
     return $self->__requeue_busy(0, undef, @_);
@@ -203,6 +207,11 @@ sub __requeue_busy  {
     return $n;
 }
 
+sub requeue_failed_item {
+    my ($self, $raw) = @_;
+    return $self->__requeue_item($self->_failed_queue, $raw);
+}
+
 sub requeue_failed_items {
     my $self = shift;
     my $limit = shift || 0;
@@ -212,6 +221,15 @@ sub requeue_failed_items {
         1,
         $self->queue_name,
         $count);
+}
+sub __requeue_item {
+    my ($self, $from, $raw) = @_;
+    return $self->{_lua}->call(
+        'move_item',
+        2,
+        $from,
+        $self->_main_queue,
+        $raw->_serialized);
 }
 
 sub get_and_flush_failed_items {
@@ -338,7 +356,7 @@ sub consume {
             next if (!$item);
             my $ok = eval { $callback->($item->data); 1; };
             if (!$ok) {
-                my $error = $@;
+                my $error = _clean_error($@);
                 for (1 .. $MAX_RECONNECT) {    # retry if connection is lost
                     eval { $onerror->($self, $item, $error); 1; }
                     or do {
@@ -392,7 +410,7 @@ sub consume {
                 else {
                     # we need to call onerror for all items now
                     @done = (); # consider all items failed
-                    my $error = $@;
+                    my $error = _clean_error($@);
                     while (my $item = shift @items) {
                         for (1 .. $MAX_RECONNECT) {
                             eval { $onerror->($self, $item, $error); 1; }
@@ -419,7 +437,7 @@ sub consume {
                         push @done, $item;
                     }
                     else {
-                        my $error = $@;
+                        my $error = _clean_error($@);
                         # retry if connection is lost
                         for (1 .. $MAX_RECONNECT) {
                             eval { $onerror->($self, $item, $error); 1; }
@@ -470,6 +488,12 @@ sub consume {
     }
 }
 
+sub _clean_error {
+    $_[0] =~ s/, <GEN0> line [0-9]+//;
+    chomp $_[0];
+    return $_[0];
+}
+
 # methods to be used for cleanup script and Nagios checks
 # the methods read or remove items from the busy queue
 my %known_actions = map { $_ => undef } (qw(requeue drop));
@@ -493,7 +517,7 @@ sub handle_expired_items {
         for my $serial (@timedout) {
             my $item = Queue::Q::ReliableFIFO::Item->new(
                 _serialized => $serial);
-            my $n = $self->requeue_busy($item);
+            my $n = $self->requeue_busy_item($item);
             push @log, $item if $n;
         }
     }
@@ -761,7 +785,7 @@ Examples:
 
 =head2 @item_obj = $q->handle_expired_items($timeout, $action);
 
-This method can be used by a cleanup job to ensures that items don't
+This method can be used by a cleanup job to ensure that items don't
 stick forever in the B<busy> status. When an item has been in this status 
 for $timeout seconds, the action specified by the $action will be done.
 The $action parameter is the same as with the consume() method.
