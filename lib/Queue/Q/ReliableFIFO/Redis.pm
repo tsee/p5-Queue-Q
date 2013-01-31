@@ -825,6 +825,17 @@ working queue. The $limit parameter is optional and can be used to move
 only a subset to the working queue.
 The number of items actually moved will be the return value.
 
+=head2 my $count = $q->requeue_failed_item($raw_item)
+
+This method will move the specified item to the main queue so that it
+will be processed again. It will return 0 or 1 (i.e. the number of items
+moved).
+
+=head2 my $count = $q->requeue_busy_item($raw_item)
+
+Same as requeue_failed_item, but then for items in the busy state
+(hanging items?).
+
 =head2 my @raw_failed_items = $q->get_and_flush_failed_items();
 
 This method will read all existing failed items and remove all failed
