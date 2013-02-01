@@ -32,3 +32,6 @@ Revision history for Perl extension Queue::Q.
 0.09 Thu Jan 31 17:12:11 CET 2013
   - removed bug with handle_expired_items()
   - added requeue_busy_item() and requeue_failed_item()
+
+0.10 Fri Feb  1 16:40:49 CET 2013
+  - solved bug with negative sleep time
