@@ -391,8 +391,10 @@ sub consume {
             my @items;
 
             # give queue some time to grow
-            Time::HiRes::usleep(($pause - (Time::HiRes::time()-$t0))*1e6)
-                if $pause;
+            if ($pause) {
+                my $pt = ($pause - (Time::HiRes::time()-$t0))*1e6;
+                Time::HiRes::usleep($pt) if $pt > 0;
+            }
 
             eval { @items = $self->claim_item($chunk); 1; }
             or do {
