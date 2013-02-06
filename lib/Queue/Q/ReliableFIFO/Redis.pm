@@ -241,7 +241,7 @@ sub get_and_flush_failed_items {
         if (keys %options);
     my @failures = 
         grep { $_->time_created < ($now-$min_age) 
-                && $_->fail_count >= $min_fc }
+                || $_->fail_count >= $min_fc }
         $self->raw_items_failed();
     my $conn = $self->redis_conn;
     my $name = $self->_failed_queue;
@@ -869,6 +869,8 @@ removed.
 Only the items that failed at least $n times will be retrieved and removed.
 
 =back
+
+If both options are used, only one of the two needs to be true to retrieve and remove an item.
 
 =head2 my $age = $q->age($queue_name [,$type]);
 
