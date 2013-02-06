@@ -233,9 +233,21 @@ sub __requeue_item {
 }
 
 sub get_and_flush_failed_items {
-    my $self = shift;
-    my @failures = $self->raw_items_failed();
-    $self->redis_conn->del($self->_failed_queue);;
+    my ($self, %options) = @_;
+    my $min_age = delete $options{MinAge} || 0;
+    my $min_fc = delete $options{MinFailCount} || 0;
+    my $now = time();
+    die "Unsupported option(s): " . join(', ', keys %options) . "\n"
+        if (keys %options);
+    my @failures = 
+        grep { $_->time_created < ($now-$min_age) 
+                && $_->fail_count >= $min_fc }
+        $self->raw_items_failed();
+    my $conn = $self->redis_conn;
+    my $name = $self->_failed_queue;
+    $conn->multi;
+    $conn->lrem($name, -1, $_->_serialized) for (@failures);
+    $conn->exec;
     return @failures;
 }
 
@@ -838,12 +850,25 @@ moved).
 Same as requeue_failed_item, but then for items in the busy state
 (hanging items?).
 
-=head2 my @raw_failed_items = $q->get_and_flush_failed_items();
+=head2 my @raw_failed_items = $q->get_and_flush_failed_items(%options);
 
 This method will read all existing failed items and remove all failed
 items right after that.
 Typical use could be a cronjob that warns about failed items
 (e.g. via email) and cleans them up.
+
+Supported options:
+
+=over 2
+
+=item * B<MaxAge> => $seconds
+Only the failed items that are older then $seconds will be retrieved and
+removed.
+
+=item * B<MinFailCount> => $n
+Only the items that failed at least $n times will be retrieved and removed.
+
+=back
 
 =head2 my $age = $q->age($queue_name [,$type]);
 
