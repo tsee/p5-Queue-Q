@@ -7,6 +7,7 @@ use parent 'Queue::Q::ReliableFIFO';
 use Queue::Q::ReliableFIFO::Item;
 use Queue::Q::ReliableFIFO::Lua;
 use Redis;
+use Scalar::Util qw(blessed);
 use Time::HiRes;
 use Data::Dumper;
 
@@ -197,8 +198,13 @@ sub __requeue_busy  {
             $_->_serialized, 
             $self->requeue_limit,
             $place,
-            $error
-        ) for @_;
+            # NB: last item to ->call can't be undef,
+            # or you'll get "ERR Protocol error: invalid bulk length"
+            $error || '',
+        ) for map(blessed($_) && $_->isa('Queue::Q::ReliableFIFO::Item')
+                    ? $_
+                    : Queue::Q::ReliableFIFO::Item->new(data => $_),
+                  @_);
         1;
     }
     or do {
