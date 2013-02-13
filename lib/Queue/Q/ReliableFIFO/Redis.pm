@@ -365,7 +365,7 @@ sub consume {
         my $die_afterwards = 0;
         while(!$stop) {
             my $item = eval { $self->claim_item(); };
-            next if (!$item);
+            last if (!$item);   #if we don't get an item in claim_wait_timeout, exit
             my $ok = eval { $callback->($item->data); 1; };
             if (!$ok) {
                 my $error = _clean_error($@);
@@ -413,7 +413,7 @@ sub consume {
                 print "error with claim\n";
             };
             $t0 = Time::HiRes::time() if $pause; # only relevant for pause
-            next if (@items == 0);
+            last if (@items == 0);
             my @done;
             if ($process_all) {
                 # process all items in one call (option ProcessAll)
@@ -587,8 +587,8 @@ Queue::Q::ReliableFIFO::Redis - In-memory Redis implementation of the ReliableFI
   $q->flush_queue();    # get a clean state, removes queue
 
   # Consumer:
-  $q->consumer(\&callback);
-  $q->consumer(
+  $q->consume(\&callback);
+  $q->consume(
     sub { my $data = shift; print 'Received: ', Dumper($data); });
 
   # Cleanup script
@@ -729,7 +729,7 @@ the length of the queue after the items are added.
 This method is called by the consumer to consume the items of a
 queue. For each item in the queue, the callback function will be
 called. The function will receive that data of the queued item
-as parameter.
+as parameter. This method also uses B<claim_wait_timeout>.
 
 The $action parameter is applied when the callback function returns
 a "die". Allowed values are:
