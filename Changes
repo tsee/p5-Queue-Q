@@ -35,3 +35,10 @@ Revision history for Perl extension Queue::Q.
 
 0.10 Fri Feb  1 16:40:49 CET 2013
   - solved bug with negative sleep time
+
+0.11 Fri Feb 15 16:00:00 CET 2013
+- Added two options for get_and_flush_failed_items()
+- Fix fifo-cli for non-system Perl usage
+- Fix claim_wait_timeout being ignored in consume
+- Attempt to fix bug with unclaiming/requeueing
+  __requeue_busy: used by unclaim, requeue_busy_item, and requeue_busy_error
