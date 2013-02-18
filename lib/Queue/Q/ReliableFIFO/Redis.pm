@@ -329,7 +329,7 @@ sub memory_usage_perc {
 }
 
 my %valid_options       = map { $_ => 1 } (qw(
-    Chunk DieOnError MaxItems ProcessAll Pause ReturnOnQueueEmpty));
+    Chunk DieOnError MaxItems ProcessAll Pause ReturnWhenEmpty));
 my %valid_error_actions = map { $_ => 1 } (qw(drop requeue ));
 
 sub consume {
