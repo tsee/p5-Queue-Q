@@ -42,3 +42,7 @@ Revision history for Perl extension Queue::Q.
 - Fix claim_wait_timeout being ignored in consume
 - Attempt to fix bug with unclaiming/requeueing
   __requeue_busy: used by unclaim, requeue_busy_item, and requeue_busy_error
+
+0.12 Mon Feb 18 12:01:34 CET 2013
+- added option ReturnWhenEmpty, back to same defaults
+- rolled back fix for unclaiming
