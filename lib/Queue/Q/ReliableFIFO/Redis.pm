@@ -329,7 +329,7 @@ sub memory_usage_perc {
 }
 
 my %valid_options       = map { $_ => 1 } (qw(
-    Chunk DieOnError MaxItems ProcessAll Pause));
+    Chunk DieOnError MaxItems ProcessAll Pause ReturnOnQueueEmpty));
 my %valid_error_actions = map { $_ => 1 } (qw(drop requeue ));
 
 sub consume {
@@ -354,6 +354,7 @@ sub consume {
     my $maxitems    = delete $options->{MaxItems} || -1;
     my $pause       = delete $options->{Pause} || 0;
     my $process_all = delete $options->{ProcessAll} || 0;
+    my $return_when_empty= delete $options->{ReturnWhenEmpty} || 0;
     croak("Option ProcessAll without Chunks does not make sense")
         if $process_all && $chunk <= 1;
     croak("Option Pause does without Chunks does not make sense")
@@ -371,7 +372,10 @@ sub consume {
         my $die_afterwards = 0;
         while(!$stop) {
             my $item = eval { $self->claim_item(); };
-            last if (!$item);   #if we don't get an item in claim_wait_timeout, exit
+            if (!$item) {
+                last if $return_when_empty;
+                next;    # nothing claimed this time, try again
+            }
             my $ok = eval { $callback->($item->data); 1; };
             if (!$ok) {
                 my $error = _clean_error($@);
@@ -419,7 +423,10 @@ sub consume {
                 print "error with claim\n";
             };
             $t0 = Time::HiRes::time() if $pause; # only relevant for pause
-            last if (@items == 0);
+            if (@items == 0) {
+                last if $return_when_empty;
+                next;    # nothing claimed this time, try again
+            }
             my @done;
             if ($process_all) {
                 # process all items in one call (option ProcessAll)
@@ -735,10 +742,19 @@ the length of the queue after the items are added.
 This method is called by the consumer to consume the items of a
 queue. For each item in the queue, the callback function will be
 called. The function will receive that data of the queued item
-as parameter. This method also uses B<claim_wait_timeout>.
+as parameter. While the consume method deals with the queue related
+actions, like claiming, "marking as done" etc, the callback function
+only deals with processing the item.
 
 The $action parameter is applied when the callback function returns
 a "die". Allowed values are:
+
+By default, the consume method will keep on reading the queue forever or
+until the process receives a SIGINT or SIGTERM signal. You can make the
+consume method return ealier by using one of the options MaxItems or
+ReturnWhenEmpty.
+
+This method also uses B<claim_wait_timeout>.
 
 =over
 
@@ -772,9 +788,18 @@ callback function returns a "die" call. Default "false".
 
 =item * B<MaxItems>
 This can be used to limit the consume method to process only a limited amount
-of items. This be useful in cases of memory leaks and restarting
+of items, which can be useful in cases of memory leaks. When you use
+this option, you will probably need to look into restarting 
 strategies with cron. Of course this comes with delays in handling the
 items.
+
+=item * B<ReturnWhenEmpty>
+Use this when you want to let consume() return when the queue is empty.
+Note that comsume will wait for 
+claim_wait_timeout seconds until it can come to the conclusion
+that the queue is empty.
+This can be used in cases where you want a batch processing behavior
+instead of a "near real time" behavior.
 
 =item * B<Pause>.
 This can be used to give the queue some time to grow, so that more
