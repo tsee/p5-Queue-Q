@@ -752,7 +752,9 @@ a "die". Allowed values are:
 By default, the consume method will keep on reading the queue forever or
 until the process receives a SIGINT or SIGTERM signal. You can make the
 consume method return ealier by using one of the options MaxItems or
-ReturnWhenEmpty.
+ReturnWhenEmpty. If you still want to have a "near real time" behavior
+you need to make sure there are always consumers running, which can be
+achived using cron and IPC::ConcurrencyLimit::WithStandby.
 
 This method also uses B<claim_wait_timeout>.
 
@@ -798,8 +800,6 @@ Use this when you want to let consume() return when the queue is empty.
 Note that comsume will wait for 
 claim_wait_timeout seconds until it can come to the conclusion
 that the queue is empty.
-This can be used in cases where you want a batch processing behavior
-instead of a "near real time" behavior.
 
 =item * B<Pause>.
 This can be used to give the queue some time to grow, so that more
