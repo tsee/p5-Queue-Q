@@ -323,7 +323,7 @@ sub memory_usage_perc {
 }
 
 my %valid_options       = map { $_ => 1 } (qw(
-    Chunk DieOnError MaxItems ProcessAll Pause ReturnWhenEmpty));
+    Chunk DieOnError MaxItems MaxSeconds ProcessAll Pause ReturnWhenEmpty));
 my %valid_error_actions = map { $_ => 1 } (qw(drop requeue ));
 
 sub consume {
@@ -346,6 +346,7 @@ sub consume {
     croak("Chunk should be a number > 0") if (! $chunk > 0);
     my $die         = delete $options->{DieOnError} || 0;
     my $maxitems    = delete $options->{MaxItems} || -1;
+    my $maxseconds  = delete $options->{MaxSeconds} || 0;
     my $pause       = delete $options->{Pause} || 0;
     my $process_all = delete $options->{ProcessAll} || 0;
     my $return_when_empty= delete $options->{ReturnWhenEmpty} || 0;
@@ -357,6 +358,7 @@ sub consume {
     for (keys %$options) {
         croak("Unknown option $_") if !$valid_options{$_};
     }
+    my $stop_time = $maxseconds > 0 ? time() + $maxseconds : 0;
 
     # Now we can start...
     my $stop = 0;
@@ -367,7 +369,8 @@ sub consume {
         while(!$stop) {
             my $item = eval { $self->claim_item(); };
             if (!$item) {
-                last if $return_when_empty;
+                last if $return_when_empty
+                            || ($stop_time > 0 && time() >= $stop_time);
                 next;    # nothing claimed this time, try again
             }
             my $ok = eval { $callback->($item->data); 1; };
@@ -397,7 +400,8 @@ sub consume {
                     last;
                 }
             }
-            $stop = 1 if $maxitems > 0 && --$maxitems == 0;
+            $stop = 1 if ($maxitems > 0 && --$maxitems == 0) 
+                            || ($stop_time > 0 && time() >= $stop_time);
         }
     }
     else {
@@ -418,7 +422,8 @@ sub consume {
             };
             $t0 = Time::HiRes::time() if $pause; # only relevant for pause
             if (@items == 0) {
-                last if $return_when_empty;
+                last if $return_when_empty
+                            || ($stop_time > 0 && time() >= $stop_time);
                 next;    # nothing claimed this time, try again
             }
             my @done;
@@ -504,7 +509,8 @@ sub consume {
                     last;
                 }
             }
-            $stop = 1 if $maxitems > 0 && ($maxitems -= $chunk) <= 0
+            $stop = 1 if ($maxitems > 0 && ($maxitems -= $chunk) <= 0)
+                            || ($stop_time > 0 && time() >= $stop_time);
         }
     }
 }
@@ -745,10 +751,10 @@ a "die". Allowed values are:
 
 By default, the consume method will keep on reading the queue forever or
 until the process receives a SIGINT or SIGTERM signal. You can make the
-consume method return ealier by using one of the options MaxItems or
-ReturnWhenEmpty. If you still want to have a "near real time" behavior
-you need to make sure there are always consumers running, which can be
-achived using cron and IPC::ConcurrencyLimit::WithStandby.
+consume method return ealier by using one of the options MaxItems,
+MaxSeconds or ReturnWhenEmpty. If you still want to have a "near real time"
+behavior you need to make sure there are always consumers running,
+which can be achived using cron and IPC::ConcurrencyLimit::WithStandby.
 
 This method also uses B<claim_wait_timeout>.
 
@@ -788,6 +794,10 @@ of items, which can be useful in cases of memory leaks. When you use
 this option, you will probably need to look into restarting 
 strategies with cron. Of course this comes with delays in handling the
 items.
+
+=item * B<MaxSeconds>
+This can be used to limit the consume method to process items for a limited
+amount of time.
 
 =item * B<ReturnWhenEmpty>
 Use this when you want to let consume() return when the queue is empty.
