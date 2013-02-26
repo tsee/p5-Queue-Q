@@ -14,10 +14,10 @@ use Getopt::Std;
 use Data::Dumper;
 
 use constant {
-    OK => 1,
-    WARNING => 1,
+    OK       => 0,
+    WARNING  => 1,
     CRITICAL => 2,
-    UNKNOWN => 3
+    UNKNOWN  => 3
 };
 
 my %opts;
