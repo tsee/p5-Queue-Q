@@ -65,27 +65,29 @@ sub call {
 
 %scripts = (
 requeue_busy => q{
--- Requeue_busy_items
--- # KEYS[1] queue name
--- # ARGV[1] item
--- # ARGV[2] requeue limit
--- # ARGV[3] place to requeue in dest-queue:
+-- requeue_busy (depending requeue limit items will be requeued or fail)
+-- # KEYS[1] from queue name (busy queue)
+-- # KEYS[2] dest queue name (main queue)
+-- # KEYS[3] failed queue name (failed queue)
+-- # ARGV[1] timestamp
+-- # ARGV[2] item
+-- # ARGV[3] requeue limit
+-- # ARGV[4] place to requeue in dest-queue:
 --      0: at producer side, 1: consumer side
 --      Note: failed items will always go to the tail of the failed queue
--- # ARGV[4] OPTIONAL error message
+-- # ARGV[5] OPTIONAL error message
 --
 --redis.log(redis.LOG_WARNING, "requeue_tail")
-if #KEYS ~= 1 then error('requeue_busy requires 1 key') end
-redis.log(redis.LOG_NOTICE, "nr keys: " .. #KEYS)
-local queue = assert(KEYS[1], 'queue name missing')
-local item  = assert(ARGV[1], 'item missing')
-local limit = assert(tonumber(ARGV[2]), 'requeue limit missing')
-local place = tonumber(ARGV[3])
+if #KEYS ~= 3 then error('requeue_busy requires 3 keys') end
+-- redis.log(redis.LOG_NOTICE, "nr keys: " .. #KEYS)
+local from  = assert(KEYS[1], 'busy queue name missing')
+local dest  = assert(KEYS[2], 'dest queue name missing')
+local failed= assert(KEYS[3], 'failed queue name missing')
+local ts    = assert(tonumber(ARGV[1]), 'timestamp missing')
+local item  = assert(ARGV[2], 'item missing')
+local limit = assert(tonumber(ARGV[3]), 'requeue limit missing')
+local place = tonumber(ARGV[4])
 assert(place == 0 or place == 1, 'requeue place should be 0 or 1')
-
-local from = queue .. "_busy"
-local dest = queue .. "_main"
-local fail = queue .. "_failed"
 
 local n = redis.call('lrem', from, 1, item)
 
@@ -98,6 +100,15 @@ if n > 0 then
     end
 
     if i.rc <= limit then
+        -- only adjust timestamps in case of requeuing
+        -- (not if busy item is place back in the front of the queue)
+        if place == 0 then
+            if i.t_created == nil then
+                i.t_created = i.t
+            end
+            i.t = ts
+        end
+
         local v=cjson.encode(i)
         if place == 0 then 
             redis.call('lpush', dest, v)
@@ -106,61 +117,90 @@ if n > 0 then
         end
     else
         -- reset requeue counter and increase fail counter
-        i.rc = 0
+        i.rc = nil
         if i.fc == nil then
             i.fc = 1
         else
             i.fc = i.fc + 1
         end
-        if #ARGV == 4 then
-            i.error = ARGV[4]
+        if #ARGV == 5 then
+            i.error = ARGV[5]
         else
-            i[error] = nil
+            i.error = nil
         end
         local v=cjson.encode(i)
-        redis.call('lpush', fail, v)
+        redis.call('lpush', failed, v)
     end
 end
 return n
 },
 requeue_failed => q{
--- KEYS[1]: queue name
--- ARGV[1]: number of items to requeue. Value "0" means "all items"
+-- requeue_failed: requeue a given number of failed items
+-- # KEYS[1] from queue name (failed queue)
+-- # KEYS[2] dest queue name (main queue)
+-- # ARGV[1] timestamp
+-- # ARGV[2] number of items to requeue. Value "0" means "all items"
+--
+if #KEYS ~= 2 then error('requeue_busy requires 2 key') end
+-- redis.log(redis.LOG_NOTICE, "nr keys: " .. #KEYS)
+local from  = assert(KEYS[1], 'failed queue name missing')
+local dest  = assert(KEYS[2], 'dest queue name missing')
+local ts    = assert(tonumber(ARGV[1]), 'timestamp missing')
+local num   = assert(tonumber(ARGV[2]), 'number of items missing')
+local n     = 0;
 
-if #KEYS ~= 1 then error('requeue_failed requires 1 key') end
-local queue = assert(KEYS[1], 'queue name missing')
-local num   = assert(tonumber(ARGV[1]), 'number of items missing')
-local dest = queue .. "_main"
-local fail = queue .. "_failed"
-
-local count = 0
 if num == 0 then
-    while redis.call('rpoplpush', fail, dest) do count = count + 1 end
-else
-    for i = 1, num do
-        if not redis.call('rpoplpush', fail, dest) then break end
-        count = count + 1
+    num = redis.call('llen', from)
+end
+
+for i = 1, num do
+    local item = redis.call('rpop', from);
+    if item == nil then break end
+
+    local i = cjson.decode(item)
+
+    if i.t_created == nil then
+        i.t_created = i.t
     end
-end
-return count
-},
-move_item => q{
--- KEYS[1]: source queue name
--- KEYS[2]: dest queue name
--- ARGV[1]: item to requeue
+    i.t = ts
 
-if #KEYS ~= 2 then error('requeue_failed requires 2 keys') end
-local source = assert(KEYS[1], 'from queue name missing')
-local dest   = assert(KEYS[2], 'dest. queue name missing')
-local item   = assert(ARGV[1], 'item is missing')
+    local v = cjson.encode(i)
+    redis.call('lpush', dest, v)
 
-local count = redis.call('lrem', source, -1, item)
-if count > 0 then
-    redis.call('lpush', dest, item)
+    n = n + 1
 end
-return count
+return n
 },
-);
+requeue_failed_item => q{
+-- Requeue_busy_items
+-- # KEYS[1] from queue name (failed queue)
+-- # KEYS[2] dest queue name (main queue)
+-- # ARGV[1] timestamp
+-- # ARGV[2] item
+--
+-- redis.log(redis.LOG_WARNING, "requeue_tail")
+if #KEYS ~= 2 then error('requeue_busy requires 2 key') end
+-- redis.log(redis.LOG_NOTICE, "nr keys: " .. #KEYS)
+local from  = assert(KEYS[1], 'failed queue name missing')
+local dest  = assert(KEYS[2], 'dest queue name missing')
+local ts    = assert(tonumber(ARGV[1]), 'timestamp missing')
+local item  = assert(ARGV[2], 'item missing')
+
+local n = redis.call('lrem', from, 1, item)
+
+if n > 0 then
+    local i = cjson.decode(item)
+
+    if i.t_created == nil then
+        i.t_created = i.t
+    end
+    i.t = ts
+
+    local v = cjson.encode(i)
+    redis.call('lpush', dest, v)
+end
+return n
+});
 
 1;
 

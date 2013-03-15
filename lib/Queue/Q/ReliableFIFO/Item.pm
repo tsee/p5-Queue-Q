@@ -35,7 +35,8 @@ sub new {
     }
     return $self;
 }
-sub time_created  { shift->_get('t'); }
+sub time_created  { $_[0]->_get('t_created') || $_[0]->_get('t'); }
+sub time_queued   { $_[0]->_get('t'); }
 sub data          { shift->_get('data'); }
 sub requeue_count { shift->_get('rc') || 0; }
 sub fail_count    { shift->_get('fc') || 0; }
@@ -100,6 +101,10 @@ Returns the data where the item was created from.
 =head2 $time_created = $item->time_created();
 
 Returns de time (epoch) the item was originally created (put in the queue).
+
+=head2 $time_queued = $item->time_queued();
+
+Returns de time (epoch) the item was put in the queue for the last time.
 
 =head2 $n = $item->requeue_count();
 

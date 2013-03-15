@@ -172,7 +172,7 @@ sub unclaim  {
 
 sub requeue_busy_item {
     my ($self, $raw) = @_;
-    return $self->__requeue_item($self->_busy_queue, $raw);
+    return $self->__requeue_busy(0, undef, $raw);
 }
 sub requeue_busy {
     my $self = shift;
@@ -192,8 +192,11 @@ sub __requeue_busy  {
     eval {
         $n += $self->{_lua}->call(
             'requeue_busy',
-            1, 
-            $self->queue_name,
+            3, 
+            $self->_busy_queue,
+            $self->_main_queue,
+            $self->_failed_queue,
+            time(),
             $_->_serialized, 
             $self->requeue_limit,
             $place,
@@ -208,28 +211,36 @@ sub __requeue_busy  {
 }
 
 sub requeue_failed_item {
-    my ($self, $raw) = @_;
-    return $self->__requeue_item($self->_failed_queue, $raw);
+    my $self = shift;
+    my $n = 0;
+    eval {
+        $n += $self->{_lua}->call(
+            'requeue_failed_item',
+            2, 
+            $self->_failed_queue,
+            $self->_main_queue,
+            time(),
+            $_->_serialized, 
+            $self->requeue_limit,
+        ) for @_;
+        1;
+    }
+    or do {
+        cluck("lua call went wrong! $@");
+    };
+    return $n;
 }
 
 sub requeue_failed_items {
     my $self = shift;
     my $limit = shift || 0;
-    my $count = 0;
     return $self->{_lua}->call(
         'requeue_failed',
-        1,
-        $self->queue_name,
-        $count);
-}
-sub __requeue_item {
-    my ($self, $from, $raw) = @_;
-    return $self->{_lua}->call(
-        'move_item',
         2,
-        $from,
+        $self->_failed_queue,
         $self->_main_queue,
-        $raw->_serialized);
+        time(),
+        $limit);
 }
 
 sub get_and_flush_failed_items {
@@ -281,7 +292,7 @@ sub age {
     return 0 if ! $serial;    # empty queue, so age 0
 
     my $item = Queue::Q::ReliableFIFO::Item->new(_serialized => $serial);
-    return time() - $item->time_created;
+    return time() - $item->time_queued;
 }
 
 sub raw_items_main {
@@ -854,9 +865,9 @@ requeue_limit times.
 
 =head2 my $count = $q->unclaim(@items)
 
-This puts claimed items back to the queue.
-It is pushed to the front
-of the queue so that it can be picked up a.s.a.p. This method is e.g. be used
+This method puts the items that are passed, back to the queue
+at the consumer side,
+so that they can be picked up a.s.a.p. This method is e.g. be used
 when a chunk of items are claimed but the consumer aborts before all
 items are processed.
 
@@ -874,7 +885,7 @@ working queue. The $limit parameter is optional and can be used to move
 only a subset to the working queue.
 The number of items actually moved will be the return value.
 
-=head2 my $count = $q->requeue_failed_item($raw_item)
+=head2 my $count = $q->requeue_failed_item(@raw_items)
 
 This method will move the specified item to the main queue so that it
 will be processed again. It will return 0 or 1 (i.e. the number of items
@@ -882,8 +893,7 @@ moved).
 
 =head2 my $count = $q->requeue_busy_item($raw_item)
 
-Same as requeue_failed_item, but then for items in the busy state
-(hanging items?).
+Same as requeue_busy, it only accepts one value instead of a list.
 
 =head2 my @raw_failed_items = $q->get_and_flush_failed_items(%options);
 
@@ -909,8 +919,10 @@ If both options are used, only one of the two needs to be true to retrieve and r
 
 =head2 my $age = $q->age($queue_name [,$type]);
 
-This methods returns the age (in seconds) of the oldest item in the queue.
-The second parameter ($type) is optional and can be main (default)
+This methods returns maximum wait time of items in the queue. This
+method will simply lookup the item in the head of the queue (i.e.
+at the comsumer side of the queue) and will return the age of that item.
+So this is a relatively cheap method.
 
 =head2 my @raw_items = $q->raw_items_busy( [$max_number] );
 

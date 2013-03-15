@@ -1,25 +1,20 @@
--- requeue_failed: requeue a given number of failed items
+-- Requeue_busy_items
 -- # KEYS[1] from queue name (failed queue)
 -- # KEYS[2] dest queue name (main queue)
 -- # ARGV[1] timestamp
--- # ARGV[2] number of items to requeue. Value "0" means "all items"
+-- # ARGV[2] item
 --
+-- redis.log(redis.LOG_WARNING, "requeue_tail")
 if #KEYS ~= 2 then error('requeue_busy requires 2 key') end
 -- redis.log(redis.LOG_NOTICE, "nr keys: " .. #KEYS)
 local from  = assert(KEYS[1], 'failed queue name missing')
 local dest  = assert(KEYS[2], 'dest queue name missing')
 local ts    = assert(tonumber(ARGV[1]), 'timestamp missing')
-local num   = assert(tonumber(ARGV[2]), 'number of items missing')
-local n     = 0;
+local item  = assert(ARGV[2], 'item missing')
 
-if num == 0 then
-    num = redis.call('llen', from)
-end
+local n = redis.call('lrem', from, 1, item)
 
-for i = 1, num do
-    local item = redis.call('rpop', from);
-    if item == nil then break end
-
+if n > 0 then
     local i = cjson.decode(item)
 
     if i.t_created == nil then
@@ -29,7 +24,5 @@ for i = 1, num do
 
     local v = cjson.encode(i)
     redis.call('lpush', dest, v)
-
-    n = n + 1
 end
 return n
