@@ -46,3 +46,8 @@ Revision history for Perl extension Queue::Q.
 0.12 Mon Feb 18 12:01:34 CET 2013
 - added option ReturnWhenEmpty, back to same defaults
 - rolled back fix for unclaiming
+
+0.13 Tue Mar 19 10:26:26 CET 2013
+- added MaxSeconds option for consume()
+- added t_created for Item objects, while default timestamp reflects the 
+  time the item was put in the queue (updated when requeuing).
