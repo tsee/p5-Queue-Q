@@ -461,8 +461,8 @@ sub consume {
                         if ($die) {
                             cluck("Stopping because of DieOnError\n");
                             $stop = 1;
-                            last;
                         }
+                        last if $stop;
                     }
                 }
             }
@@ -488,9 +488,9 @@ sub consume {
                         if ($die) {
                             cluck("Stopping because of DieOnError\n");
                             $stop = 1;
-                            last;
                         }
-                    };
+                    }
+                    last if $stop;
                 }
             }
             my $count = 0;
