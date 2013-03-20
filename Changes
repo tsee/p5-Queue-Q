@@ -51,3 +51,6 @@ Revision history for Perl extension Queue::Q.
 - added MaxSeconds option for consume()
 - added t_created for Item objects, while default timestamp reflects the 
   time the item was put in the queue (updated when requeuing).
+
+0.14 Wed Mar 20 14:34:03 CET 2013
+- solved bug with stop signal while handling a chunk of items
