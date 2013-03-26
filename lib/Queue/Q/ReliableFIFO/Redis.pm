@@ -76,6 +76,12 @@ sub new {
     return $self;
 }
 
+sub clone {
+    my ($class, $org, %params) = @_;
+    my %default = map { $_, $org->{$_} } grep { m/^[a-zA-Z]/ } keys %$org;
+    return $class->new( %default, %params);
+}
+
 sub enqueue_item {
     my $self = shift;
     return if not @_;
@@ -602,6 +608,12 @@ Queue::Q::ReliableFIFO::Redis - In-memory Redis implementation of the ReliableFI
       queue_name => 'my_work_queue',
   );
 
+  # reuse same connection and create a new object for another queue
+  # Note: don't use the same connection in different threads (of course)!
+  my $q2 = Queue::Q::ReliableFIFO::Redis->clone(
+      $q, queue_name => 'other_queue'
+  );
+
   # Producer:
   $q->enqueue_item("foo");
   # You can pass any JSON-serializable data structure
@@ -742,6 +754,11 @@ Method, typically done by a cronjob).
 C<Default value is 30>.
 
 =back
+
+=head2 clone($q, %options)
+
+The clone method can be use to use the default (and existing connection)
+to create another queue object.
 
 =head2 enqueue_item(@items)
 
