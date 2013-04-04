@@ -367,9 +367,9 @@ sub consume {
     my $pause       = delete $options->{Pause} || 0;
     my $process_all = delete $options->{ProcessAll} || 0;
     my $return_when_empty= delete $options->{ReturnWhenEmpty} || 0;
-    croak("Option ProcessAll without Chunks does not make sense")
+    croak("Option ProcessAll without Chunk does not make sense")
         if $process_all && $chunk <= 1;
-    croak("Option Pause without Chunks does not make sense")
+    croak("Option Pause without Chunk does not make sense")
         if $pause && $chunk <= 1;
 
     for (keys %$options) {
