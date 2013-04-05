@@ -573,13 +573,18 @@ sub handle_expired_items {
         }
     }
 
-    # put in the items of older scans that did not timeout
-    my %timedout = map { $_ => undef } @timedout;
+    # We create a new timetable. We take the original timetable and
+    # exclude:
+    # 1. the busy items which timed out and we just handled
+    # 2. timetable items which have no corresponding busy items anymore
+    my %timedout = map { $_ => undef } @timedout; 
+    my %busy = map { $_ => undef } @serial;
     my %newtimetable = 
         map  { $_ => $timetable{$_} } 
-        grep { ! exists $timedout{$_} }
-        keys %timetable;
-    # put in the items of latest scan that did not timeout
+        grep { exists $busy{$_} }        # exclude (ad 2.)
+        grep { ! exists $timedout{$_} }  # exclude (ad 1.)
+        keys %timetable;                 # original timetable
+    # put in the items of latest scan we did not see before
     $newtimetable{$_} = $time 
         for (grep { !exists $newtimetable{$_} } @serial);
     $conn->multi;
