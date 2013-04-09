@@ -54,3 +54,8 @@ Revision history for Perl extension Queue::Q.
 
 0.14 Wed Mar 20 14:34:03 CET 2013
 - solved bug with stop signal while handling a chunk of items
+
+0.15 Tue Apr  9 10:28:19 CEST 2013
+- added clone() method
+- fixed cleanup bug with handle_expired_items
+- fixed typo's in documentation
