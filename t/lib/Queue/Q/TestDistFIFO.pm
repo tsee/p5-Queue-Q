@@ -97,10 +97,10 @@ sub test_dist_fifo_claim {
     $q->enqueue_items($_) for 151..161;
     qlen_claimcount($q, 11, 2, "4");
 
-    @items = sort {$a->item_data <=> $b->item_data} @items; 
+    @items = sort {$a->data <=> $b->data} @items;
     is(scalar(@items), 2);
-    is($items[0]->item_data, 1, "Fetched one item [1]");
-    is($items[1]->item_data, 2, "Fetched one item [2]");
+    is($items[0]->data, 1, "Fetched one item [1]");
+    is($items[1]->data, 2, "Fetched one item [2]");
     $q->mark_item_as_done($_) for @items;
     qlen_claimcount($q, 11, 0, "5");
 
@@ -112,8 +112,8 @@ sub test_dist_fifo_claim {
     push @items, grep defined, $q->claim_items(15);
     qlen_claimcount($q, 0, 11, "8");
 
-    @items = sort {$a->item_data <=> $b->item_data} @items;
-    is_deeply([map $_->item_data, @items], [151..161]);
+    @items = sort {$a->data <=> $b->data} @items;
+    is_deeply([map $_->data, @items], [151..161]);
 
     $q->mark_items_as_done(@items);
     qlen_claimcount($q, 0, 0, "9");
@@ -129,7 +129,7 @@ sub test_dist_fifo_claim {
     for (1..30) {
         my $item = $q->claim_item();
         for my $s (\@set1, \@set2, \@set3) {
-            if (@$s and $s->[0] == $item->item_data) {
+            if (@$s and $s->[0] == $item->data) {
                 pass("Strict ordering checks: $_");
                 $q->mark_item_as_done($item);
                 $item = undef;

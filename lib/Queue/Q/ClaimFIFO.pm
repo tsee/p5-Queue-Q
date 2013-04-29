@@ -47,7 +47,7 @@ Queue::Q::ClaimFIFO - FIFO queue keeping track of claimed items
   
   # consumer:
   my $item = $q->claim_item;
-  my $data = $item->item_data;
+  my $data = $item->data;
   # work with data...
   $q->mark_item_as_done($item);
   
