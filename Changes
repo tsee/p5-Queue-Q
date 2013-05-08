@@ -59,3 +59,6 @@ Revision history for Perl extension Queue::Q.
 - added clone() method
 - fixed cleanup bug with handle_expired_items
 - fixed typo's in documentation
+
+0.16 Wed May  8 17:23:59 CEST 2013
+- added peek_item
