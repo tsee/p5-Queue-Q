@@ -287,6 +287,20 @@ sub queue_length {
     return $len;
 }
 
+sub peek_item {
+    my ($self, $type) = @_;
+    # this function returns age of oldest item in the queue (in seconds)
+    __validate_type(\$type);
+    my $qn = $self->queue_name . "_$type";
+
+    # take oldest item
+    my ($serial) = $self->redis_conn->lrange($qn,-1,-1);
+    return undef if ! $serial;    # empty queue, so age 0
+
+    my $item = Queue::Q::ReliableFIFO::Item->new(_serialized => $serial);
+    return $item->data();
+}
+
 sub age {
     my ($self, $type) = @_;
     # this function returns age of oldest item in the queue (in seconds)
@@ -939,7 +953,7 @@ Only the items that failed at least $n times will be retrieved and removed.
 
 If both options are used, only one of the two needs to be true to retrieve and remove an item.
 
-=head2 my $age = $q->age($queue_name [,$type]);
+=head2 my $age = $q->age([$type]);
 
 This methods returns maximum wait time of items in the queue. This
 method will simply lookup the item in the head of the queue (i.e.
@@ -964,6 +978,11 @@ the main queue can be large, so a limit is strongly recommended here.
 
 Returns the memory usage percentage of the redis instance where the queue
 is located.
+
+=head2 peek_item([$type])
+
+Returns value of oldest item in the queue (about to be consumed), without
+removing the item from the queue.
 
 =head1 AUTHOR
 
