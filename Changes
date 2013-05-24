@@ -62,3 +62,7 @@ Revision history for Perl extension Queue::Q.
 
 0.16 Wed May  8 17:23:59 CEST 2013
 - added peek_item
+
+0.17 Fri May 24 13:27:47 CEST 2013
+- bugfix with MaxItems in ReliableFIFO/Redis
+- merged branch of ksurrent fixing inconsistent API for ClaimFIFO
