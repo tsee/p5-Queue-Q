@@ -10,6 +10,8 @@ use Class::XSAccessor {
     getters => [qw(item_data)],
 };
 
+BEGIN { *data = \&item_data; }
+
 our $SerealEncoder = Sereal::Encoder->new;
 our $SerealDecoder = Sereal::Decoder->new;
 our $MD5 = Digest::MD5->new;
@@ -29,7 +31,7 @@ sub _serialized_data {
     my $self = shift;
     return $self->{_serialized_data}
         if defined $self->{_serialized_data};
-    return( $self->{_serialized_data} = $self->_serialize_data($self->item_data) );
+    return( $self->{_serialized_data} = $self->_serialize_data($self->data) );
 }
 
 # for "friends" only
@@ -59,7 +61,7 @@ Queue::Q::ClaimFIFO::Item - An item in a 'ClaimFIFO' queue
   
   # consumer:
   my $item = $q->claim_item; # this is a Queue::Q::ClaimFIFO::Item!
-  my $data = $item->item_data;
+  my $data = $item->data;
   # work with data...
   $q->mark_item_as_done($item);
 
@@ -76,16 +78,20 @@ a new data structure.
 
 =head2 new
 
-Takes named parameters. Requires an C<item_data> parameter that
+Takes named parameters. Requires an C<data> parameter that
 is the item's content.
 
 If the queue backend implementation requires serialization (which
 is bound to be the general case), the data must be a data structure that
 can be serialized in the C<Sereal> format using L<Sereal::Encoder>.
 
-=head2 item_data
+=head2 data
 
 Returns the item's content.
+
+=head2 item_data
+
+Alias for C<data>. DEPRECATED.
 
 =head1 AUTHOR
 

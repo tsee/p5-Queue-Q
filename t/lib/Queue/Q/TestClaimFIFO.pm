@@ -31,19 +31,19 @@ sub test_claim_fifo {
 
     my $item = $q->claim_item();
     isa_ok($item, "Queue::Q::ClaimFIFO::Item");
-    is_deeply($item->item_data, [1], "Fetching one item");
+    is_deeply($item->data, [1], "Fetching one item");
     qlen_claimcount($q, 12, 1, "3");
     $q->mark_item_as_done($item);
     qlen_claimcount($q, 12, 0, "4");
 
     $item = $q->claim_item();
     isa_ok($item, "Queue::Q::ClaimFIFO::Item");
-    is_deeply($item->item_data, [2], "Fetching one item, 2");
+    is_deeply($item->data, [2], "Fetching one item, 2");
     qlen_claimcount($q, 11, 1, "5");
 
     my @items = $q->claim_items();
     is(scalar(@items), 1, "claim_items returns one item by default");
-    is($items[0]->item_data, 151, "Fetching one item via claim_items");
+    is($items[0]->data, 151, "Fetching one item via claim_items");
     qlen_claimcount($q, 10, 2, "6");
 
     $q->mark_item_as_done($items[0]);
@@ -55,7 +55,7 @@ sub test_claim_fifo {
     is(scalar(@items), 3);
     isa_ok($_, "Queue::Q::ClaimFIFO::Item") for @items;
     qlen_claimcount($q, 7, 3, "9");
-    is_deeply([map $_->item_data, @items], [152..154], "Fetching three items via claim_items");
+    is_deeply([map $_->data, @items], [152..154], "Fetching three items via claim_items");
 
     $q->enqueue_item({foo => "bar"});
     qlen_claimcount($q, 8, 3, "10");
@@ -66,7 +66,7 @@ sub test_claim_fifo {
     ok(!defined($items2[$_]), "items2[$_]") for 8..9;
     qlen_claimcount($q, 0, 11, "11");
 
-    is_deeply([map $_->item_data, @items2[0..7]], [155..161, {foo => "bar"}], "Fetching items via claim_items");
+    is_deeply([map $_->data, @items2[0..7]], [155..161, {foo => "bar"}], "Fetching items via claim_items");
 
 
     $item = $q->claim_item();
