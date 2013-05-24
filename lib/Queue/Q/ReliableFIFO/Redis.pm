@@ -540,7 +540,7 @@ sub consume {
                     last;
                 }
             }
-            $stop = 1 if ($maxitems > 0 && ($maxitems -= $chunk) <= 0)
+            $stop = 1 if ($maxitems > 0 && ($maxitems -= @done) <= 0)
                             || ($stop_time > 0 && time() >= $stop_time);
         }
     }
