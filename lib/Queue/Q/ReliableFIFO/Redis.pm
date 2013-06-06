@@ -61,9 +61,9 @@ sub new {
     $self->{"_$_" . '_queue'}   = $params{queue_name} . "_$_"
         for (keys %queue_type);
 
-    $self->{redis_options} ||= { reconnect => 60 }; # auto reconnect
     $self->{redis_conn} ||= Redis->new(
-            %{$self->{redis_options}},
+            # by default, auto-reconnect during 60 seconds
+            %{$self->{redis_options} ||= { reconnect => 60 }},
             encoding => undef, # force undef for binary data
             server => join(":", $self->server, $self->port),
     );
