@@ -1,7 +1,7 @@
 package Queue::Q::ReliableFIFO::Item;
 use strict;
 
-# for reasons of debugging, JSON is easier, while Serial::* is 
+# for reasons of debugging, JSON is easier, while Sereal::* is
 # faster (about 7%) and delivers smaller serialized blobs.
 use JSON::XS; # use the real stuff, no fall back on pure Perl JSON please
 my $serializer   = JSON::XS->new->pretty(0);

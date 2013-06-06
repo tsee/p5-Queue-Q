@@ -107,7 +107,7 @@ of Redis each sustained 800k-1M transactions per second with a naive-type
 distributed queue. C<DistFIFO> has not been tested with the C<ReliableFIFO>
 implementation as building blocks yet!
 
-=head1 ACKNLOWLEDGMENT
+=head1 ACKNOWLEDGMENT
 
 This module was originally developed for Booking.com.
 With approval from Booking.com, this module was generalized
