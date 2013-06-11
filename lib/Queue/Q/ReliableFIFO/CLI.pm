@@ -264,6 +264,7 @@ sub run {
                 "cleanup <timeout> <(requeue|fail|drop)>", 
                 'rm <path> [<limit>]',
                 'db <db>',
+                'close',
              ],
     );
     push(@{$help{$_}}, ("?", "who", "hist", "quit")) for (0 .. 3);
