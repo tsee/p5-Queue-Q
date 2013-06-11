@@ -6,16 +6,16 @@ SYNOPSIS
   
       # Very primitive FIFO queue (abstract interface)
       use Queue::Q::NaiveFIFO;
-      # ... and it's pure-Perl, in-memory implementation
+      # ... and its pure-Perl, in-memory implementation
       use Queue::Q::NaiveFIFO::Perl;
-      # ... it's Redis-based implementation
+      # ... its Redis-based implementation
       use Queue::Q::NaiveFIFO::Redis;
   
       # "Reliable" enqueue, claim, mark-as-done FIFO queue:
       use Queue::Q::ClaimFIFO; # abstract interface
-      # ... and again, it's pure-Perl, in-memory implementation
+      # ... and again, its pure-Perl, in-memory implementation
       use Queue::Q::ClaimFIFO::Perl;
-      # ... and it's Redis-based implementation
+      # ... and its Redis-based implementation
       use Queue::Q::ClaimFIFO::Redis;
   
       # A composite, distributed queue, built from shards of
