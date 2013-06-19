@@ -811,7 +811,7 @@ This method also uses B<claim_wait_timeout>.
 tail of the queue. The requeue_limit property is the queue indicates 
 the limit to how many times an item can be requeued.
 The default is 5 times. You can change that by setting by calling
-the set_queue_limit() method or by passing the property to the
+the set_requeue_limit() method or by passing the property to the
 constructor. When the requeue limit is reached, the item will go 
 to the failed queue.
 
