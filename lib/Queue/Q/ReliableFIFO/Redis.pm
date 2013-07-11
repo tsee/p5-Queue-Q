@@ -240,13 +240,17 @@ sub requeue_failed_item {
 sub requeue_failed_items {
     my $self = shift;
     my $limit = shift || 0;
-    return $self->{_lua}->call(
+    my $n = $self->{_lua}->call(
         'requeue_failed',
         2,
         $self->_failed_queue,
         $self->_main_queue,
         time(),
         $limit);
+    if (!defined $n) {
+        cluck("lua call went wrong! $@");
+    }
+    return $n;
 }
 
 sub get_and_flush_failed_items {
