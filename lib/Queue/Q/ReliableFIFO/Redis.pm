@@ -757,7 +757,7 @@ Optional parameters are
 =item B<redis_connection> for reusing an existing redis connection
 
 =item B<requeue_limit> to specify how often an item is allowed to
-enter the queu again before ending up in the failed queue.
+enter the queue again before ending up in the failed queue.
 C<Default value is 5>.
 
 =item B<claim_wait_timeout> (in seconds) to specify how long the
@@ -798,10 +798,10 @@ a "die". Allowed values are:
 
 By default, the consume method will keep on reading the queue forever or
 until the process receives a SIGINT or SIGTERM signal. You can make the
-consume method return ealier by using one of the options MaxItems,
+consume method return earlier by using one of the options MaxItems,
 MaxSeconds or ReturnWhenEmpty. If you still want to have a "near real time"
 behavior you need to make sure there are always consumers running,
-which can be achived using cron and IPC::ConcurrencyLimit::WithStandby.
+which can be archived using cron and IPC::ConcurrencyLimit::WithStandby.
 
 This method also uses B<claim_wait_timeout>.
 
@@ -957,12 +957,12 @@ If both options are used, only one of the two needs to be true to retrieve and r
 
 This methods returns maximum wait time of items in the queue. This
 method will simply lookup the item in the head of the queue (i.e.
-at the comsumer side of the queue) and will return the age of that item.
+at the consumer side of the queue) and will return the age of that item.
 So this is a relatively cheap method.
 
 =head2 my @raw_items = $q->raw_items_busy( [$max_number] );
 
-Returns objects of type Queue::Q::RelaibleFIFO::Item from the busy list.
+Returns objects of type Queue::Q::ReliableFIFO::Item from the busy list.
 You can limit the number of items by passing the limit to the method.
 
 =head2 my @raw_items = $q->raw_items_failed( [$max_number] );
