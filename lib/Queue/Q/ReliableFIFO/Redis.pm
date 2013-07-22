@@ -358,7 +358,8 @@ sub memory_usage_perc {
 }
 
 my %valid_options       = map { $_ => 1 } (qw(
-    Chunk DieOnError MaxItems MaxSeconds ProcessAll Pause ReturnWhenEmpty));
+    Chunk DieOnError MaxItems MaxSeconds ProcessAll Pause ReturnWhenEmpty NoSigHandlers
+));
 my %valid_error_actions = map { $_ => 1 } (qw(drop requeue ));
 
 sub consume {
@@ -385,6 +386,7 @@ sub consume {
     my $pause       = delete $options->{Pause} || 0;
     my $process_all = delete $options->{ProcessAll} || 0;
     my $return_when_empty= delete $options->{ReturnWhenEmpty} || 0;
+    my $nohandlers  = delete $options->{NoSigHandlers} || 0;
     croak("Option ProcessAll without Chunk does not make sense")
         if $process_all && $chunk <= 1;
     croak("Option Pause without Chunk does not make sense")
@@ -398,7 +400,19 @@ sub consume {
     # Now we can start...
     my $stop = 0;
     my $MAX_RECONNECT = 60;
-    local $SIG{INT} = local $SIG{TERM} = sub { print "stopping\n"; $stop = 1; };
+    my $sigint  = ref $SIG{INT}  eq 'CODE' ? $SIG{INT}  : undef;
+    my $sigterm = ref $SIG{TERM} eq 'CODE' ? $SIG{TERM} : undef;
+    local $SIG{INT} = $nohandlers ? $sigint : sub {
+        print "stopping\n";
+        $stop = 1;
+        &$sigint if $sigint;
+    };
+    local $SIG{TERM} = $nohandlers ? $sigterm : sub {
+        print "stopping\n";
+        $stop = 1;
+        &$sigterm if $sigterm;
+    };
+
     if ($chunk == 1) {
         my $die_afterwards = 0;
         while(!$stop) {
@@ -872,6 +886,11 @@ data structure, while in this case @_ will contain an array with item
 data structures.
 This  option only makes sense if larger Chunks are read from the queue
 (so together with option "Chunk").
+
+=item * B<NoSigHandlers>
+When this option is used, no signal handlers for SIGINT and SIGTERM will be
+installed. By default, consume() installs handlers that will make the queue
+consuming stop on reception of those signals.
 
 =back
 
