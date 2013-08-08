@@ -1,5 +1,8 @@
 package Queue::Q::ReliableFIFO::Item;
 use strict;
+use warnings;
+
+use Class::XSAccessor {getters => ['_serialized']};
 
 # for reasons of debugging, JSON is easier, while Sereal::* is
 # faster (about 7%) and delivers smaller serialized blobs.
@@ -23,10 +26,10 @@ sub new {
     my $class = shift;
     my $self = bless { @_ }, $class;
 
-    die "data or _serialized expected for new\n"
-        if (!exists $self->{data} && !exists $self->{_serialized});
+    die "'data' or '_serialized' named parameters required for constructor"
+        if not exists $self->{data} and not exists $self->{_serialized};
 
-    if (!exists $self->{_serialized}) {
+    if (not exists $self->{_serialized}) {
         $self->{_serialized} ||=
             $serializer->encode({
                 t => time(),
@@ -35,18 +38,21 @@ sub new {
     }
     return $self;
 }
-sub time_created  { $_[0]->_get('t_created') || $_[0]->_get('t'); }
-sub time_queued   { $_[0]->_get('t'); }
-sub data          { shift->_get('data'); }
-sub requeue_count { shift->_get('rc') || 0; }
-sub fail_count    { shift->_get('fc') || 0; }
-sub last_error    { shift->_get('error'); }
+
 sub _get { 
     my ($self, $elem) = @_;
-    $self->_deserialize if ! exists $self->{data};
-    return exists $self->{$elem} ? $self->{$elem} : undef;
+    $self->_deserialize
+        if not exists $self->{data};
+    return $self->{$elem};
 }
-sub _serialized { $_[0]->{_serialized}; }
+
+sub time_created  { $_[0]->_get('t_created') || $_[0]->_get('t') }
+sub time_queued   { $_[0]->_get('t') }
+sub data          { $_[0]->_get('data') }
+sub requeue_count { $_[0]->_get('rc') || 0 }
+sub fail_count    { $_[0]->_get('fc') || 0 }
+sub last_error    { $_[0]->_get('error') }
+
 sub inc_nr_requeues {
     my $self = shift;
     my $plain = $deserializer->decode($self->{_serialized});
@@ -54,6 +60,7 @@ sub inc_nr_requeues {
     $self->{_serialized} =  $serializer->encode($plain);
     return $self->{rc};
 }
+
 sub _deserialize {
     my $self = shift;
     my $plain = $deserializer->decode($self->{_serialized});
@@ -63,7 +70,7 @@ sub _deserialize {
             $self->{$k} = $plain->{$k};
         }
         else {
-            delete $self->{$k} if exists $self->{$k};
+            delete $self->{$k};
         }
     }
 }
@@ -89,38 +96,38 @@ Queue::Q::ReliableFIFO::Item - An item object of an queue item
 
 =head1 METHODS
 
-=head2 $item = new(data => $data);
+=head2 $item = new(data => $data)
 
 Constructor for an item object (key "data" for plain data that needs to 
-be serialized, key _serialized for data that needs to be deserialzed).
+be serialized, key "_serialized" for data that needs to be deserialzed).
 
-=head2 $data = $item->data();
+=head2 $data = $item->data()
 
 Returns the data where the item was created from.
 
-=head2 $time_created = $item->time_created();
+=head2 $time_created = $item->time_created()
 
 Returns de time (epoch) the item was originally created (put in the queue).
 
-=head2 $time_queued = $item->time_queued();
+=head2 $time_queued = $item->time_queued()
 
 Returns de time (epoch) the item was put in the queue for the last time.
 
-=head2 $n = $item->requeue_count();
+=head2 $n = $item->requeue_count()
 
 Returns the number the item was requeued. Requeuing can happen when
 processing the item fails.
 
-=head2 $n = $item->fail_count();
+=head2 $n = $item->fail_count()
 
 Returns the number the item was requeued. An item fails after the it has
 been retried up to requeue_limit times (See Redis.pm).
 
-=head2 $n = $item->last_error();
+=head2 $n = $item->last_error()
 
 Returns the last error message of processing this item.
 
-=head2 inc_nr_requeues();
+=head2 inc_nr_requeues()
 
 Increases the requeue counter of this item.
 
