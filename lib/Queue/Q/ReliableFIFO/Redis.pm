@@ -365,199 +365,185 @@ sub memory_usage_perc {
     return $mem_used * 100 / $mem_avail;
 }
 
-my %valid_options       = map { $_ => 1 } (qw(
-    Chunk DieOnError MaxItems MaxSeconds ProcessAll Pause ReturnWhenEmpty NoSigHandlers
-));
-my %valid_error_actions = map { $_ => 1 } (qw(drop requeue));
 
-sub consume {
-    my ($self, $callback, $error_action, $options) = @_;
-    # validation of input
-    $error_action ||= 'requeue';
-    croak("Unknown error action")
-        if ! exists $valid_error_actions{$error_action};
-    my %error_subs = (
-        'drop'    => sub { my ($self, $item) = @_;
-                            $self->mark_item_as_done($item); },
-        'requeue' => sub { my ($self, $item, $error) = @_;
-                           $self->requeue_busy_error($error, $item); },
-    );
-    my $onerror = $error_subs{$error_action}
-        || croak("no handler for $error_action");
+SCOPE: {
+    my %ValidErrorActions = map { $_ => 1 } (qw(drop requeue));
+    my %ValidOptions       = map { $_ => 1 } (qw(
+        Chunk DieOnError MaxItems MaxSeconds ProcessAll Pause ReturnWhenEmpty NoSigHandlers
+    ));
 
-    $options ||= {};
-    my $chunk       = delete $options->{Chunk} || 1;
-    croak("Chunk should be a number > 0") if (! $chunk > 0);
-    my $die         = delete $options->{DieOnError} || 0;
-    my $maxitems    = delete $options->{MaxItems} || -1;
-    my $maxseconds  = delete $options->{MaxSeconds} || 0;
-    my $pause       = delete $options->{Pause} || 0;
-    my $process_all = delete $options->{ProcessAll} || 0;
-    my $return_when_empty= delete $options->{ReturnWhenEmpty} || 0;
-    my $nohandlers  = delete $options->{NoSigHandlers} || 0;
-    croak("Option ProcessAll without Chunk does not make sense")
-        if $process_all && $chunk <= 1;
-    croak("Option Pause without Chunk does not make sense")
-        if $pause && $chunk <= 1;
+    sub consume {
+        my ($self, $callback, $error_action, $options) = @_;
+        # validation of input
+        $error_action ||= 'requeue';
+        croak("Unknown error action")
+            if not exists $ValidErrorActions{$error_action};
+        my %error_subs = (
+            'drop'    => sub { my ($self, $item) = @_;
+                                $self->mark_item_as_done($item); },
+            'requeue' => sub { my ($self, $item, $error) = @_;
+                               $self->requeue_busy_error($error, $item); },
+        );
+        my $onerror = $error_subs{$error_action}
+            || croak("no handler for $error_action");
 
-    for (keys %$options) {
-        croak("Unknown option $_") if !$valid_options{$_};
-    }
-    my $stop_time = $maxseconds > 0 ? time() + $maxseconds : 0;
+        $options ||= {};
+        my $chunk       = delete $options->{Chunk} || 1;
+        croak("Chunk should be a number > 0") if (! $chunk > 0);
+        my $die         = delete $options->{DieOnError} || 0;
+        my $maxitems    = delete $options->{MaxItems} || -1;
+        my $maxseconds  = delete $options->{MaxSeconds} || 0;
+        my $pause       = delete $options->{Pause} || 0;
+        my $process_all = delete $options->{ProcessAll} || 0;
+        my $return_when_empty= delete $options->{ReturnWhenEmpty} || 0;
+        my $nohandlers  = delete $options->{NoSigHandlers} || 0;
+        croak("Option ProcessAll without Chunk does not make sense")
+            if $process_all && $chunk <= 1;
+        croak("Option Pause without Chunk does not make sense")
+            if $pause && $chunk <= 1;
 
-    # Now we can start...
-    my $stop = 0;
-    my $MAX_RECONNECT = 60;
-    my $sigint  = ref $SIG{INT}  eq 'CODE' ? $SIG{INT}  : undef;
-    my $sigterm = ref $SIG{TERM} eq 'CODE' ? $SIG{TERM} : undef;
-    local $SIG{INT} = $nohandlers ? $sigint : sub {
-        print "stopping\n";
-        $stop = 1;
-        &$sigint if $sigint;
-    };
-    local $SIG{TERM} = $nohandlers ? $sigterm : sub {
-        print "stopping\n";
-        $stop = 1;
-        &$sigterm if $sigterm;
-    };
-
-    if ($chunk == 1) {
-        my $die_afterwards = 0;
-        while(!$stop) {
-            my $item = eval { $self->claim_item(); };
-            if (!$item) {
-                last if $return_when_empty
-                            || ($stop_time > 0 && time() >= $stop_time);
-                next;    # nothing claimed this time, try again
-            }
-            my $ok = eval { $callback->($item->data); 1; };
-            if (!$ok) {
-                my $error = _clean_error($@);
-                for (1 .. $MAX_RECONNECT) {    # retry if connection is lost
-                    eval { $onerror->($self, $item, $error); 1; }
-                    or do {
-                        last if $stop;
-                        sleep 1;
-                        next;
-                    };
-                    last;
-                }
-                if ($die) {
-                    $stop = 1;
-                    cluck("Stopping because of DieOnError\n");
-                }
-            } else {
-                for (1 .. $MAX_RECONNECT) {    # retry if connection is lost
-                    eval { $self->mark_item_as_done($item); 1; }
-                    or do {
-                        last if $stop;
-                        sleep 1;
-                        next;
-                    };
-                    last;
-                }
-            }
-            $stop = 1 if ($maxitems > 0 && --$maxitems == 0)
-                            || ($stop_time > 0 && time() >= $stop_time);
+        for (keys %$options) {
+            croak("Unknown option $_") if not exists $ValidOptions{$_};
         }
-    }
-    else {
-        my $die_afterwards = 0;
-        my $t0 = Time::HiRes::time();
-        while(!$stop) {
-            my @items;
+        my $stop_time = $maxseconds > 0 ? time() + $maxseconds : 0;
 
-            # give queue some time to grow
-            if ($pause) {
-                my $pt = ($pause - (Time::HiRes::time()-$t0))*1e6;
-                Time::HiRes::usleep($pt) if $pt > 0;
-            }
+        # Now we can start...
+        my $stop = 0;
+        my $MAX_RECONNECT = 60;
+        my $sigint  = ref $SIG{INT}  eq 'CODE' ? $SIG{INT}  : undef;
+        my $sigterm = ref $SIG{TERM} eq 'CODE' ? $SIG{TERM} : undef;
+        local $SIG{INT} = $nohandlers ? $sigint : sub {
+            print "stopping\n";
+            $stop = 1;
+            &$sigint if $sigint;
+        };
+        local $SIG{TERM} = $nohandlers ? $sigterm : sub {
+            print "stopping\n";
+            $stop = 1;
+            &$sigterm if $sigterm;
+        };
 
-            eval { @items = $self->claim_item($chunk); 1; }
-            or do {
-                print "error with claim\n";
-            };
-            $t0 = Time::HiRes::time() if $pause; # only relevant for pause
-            if (@items == 0) {
-                last if $return_when_empty
-                            || ($stop_time > 0 && time() >= $stop_time);
-                next;    # nothing claimed this time, try again
-            }
-            my @done;
-            if ($process_all) {
-                # process all items in one call (option ProcessAll)
-                my $ok = eval { $callback->(map { $_->data } @items); 1; };
-                if ($ok) {
-                    @done = splice @items;
+        if ($chunk == 1) {
+            my $die_afterwards = 0;
+            while(!$stop) {
+                my $item = eval { $self->claim_item(); };
+                if (!$item) {
+                    last if $return_when_empty
+                                || ($stop_time > 0 && time() >= $stop_time);
+                    next;    # nothing claimed this time, try again
                 }
-                else {
-                    # we need to call onerror for all items now
-                    @done = (); # consider all items failed
+                my $ok = eval { $callback->($item->data); 1; };
+                if (!$ok) {
                     my $error = _clean_error($@);
-                    while (my $item = shift @items) {
-                        for (1 .. $MAX_RECONNECT) {
-                            eval { $onerror->($self, $item, $error); 1; }
-                            or do {
-                                last if $stop; # items might stay in busy mode
-                                sleep 1;
-                                next;
-                            };
-                            last;
-                        }
-                        if ($die) {
-                            cluck("Stopping because of DieOnError\n");
-                            $stop = 1;
-                        }
-                        last if $stop;
+                    for (1 .. $MAX_RECONNECT) {    # retry if connection is lost
+                        eval { $onerror->($self, $item, $error); 1; }
+                        or do {
+                            last if $stop;
+                            sleep 1;
+                            next;
+                        };
+                        last;
+                    }
+                    if ($die) {
+                        $stop = 1;
+                        cluck("Stopping because of DieOnError\n");
+                    }
+                } else {
+                    for (1 .. $MAX_RECONNECT) {    # retry if connection is lost
+                        eval { $self->mark_item_as_done($item); 1; }
+                        or do {
+                            last if $stop;
+                            sleep 1;
+                            next;
+                        };
+                        last;
                     }
                 }
+                $stop = 1 if ($maxitems > 0 && --$maxitems == 0)
+                                || ($stop_time > 0 && time() >= $stop_time);
             }
-            else {
-                # normal case: process items one by one
-                while (my $item = shift @items) {
-                    my $ok = eval { $callback->($item->data); 1; };
+        }
+        else {
+            my $die_afterwards = 0;
+            my $t0 = Time::HiRes::time();
+            while(!$stop) {
+                my @items;
+
+                # give queue some time to grow
+                if ($pause) {
+                    my $pt = ($pause - (Time::HiRes::time()-$t0))*1e6;
+                    Time::HiRes::usleep($pt) if $pt > 0;
+                }
+
+                eval { @items = $self->claim_item($chunk); 1; }
+                or do {
+                    print "error with claim\n";
+                };
+                $t0 = Time::HiRes::time() if $pause; # only relevant for pause
+                if (@items == 0) {
+                    last if $return_when_empty
+                                || ($stop_time > 0 && time() >= $stop_time);
+                    next;    # nothing claimed this time, try again
+                }
+                my @done;
+                if ($process_all) {
+                    # process all items in one call (option ProcessAll)
+                    my $ok = eval { $callback->(map { $_->data } @items); 1; };
                     if ($ok) {
-                        push @done, $item;
+                        @done = splice @items;
                     }
                     else {
+                        # we need to call onerror for all items now
+                        @done = (); # consider all items failed
                         my $error = _clean_error($@);
-                        # retry if connection is lost
-                        for (1 .. $MAX_RECONNECT) {
-                            eval { $onerror->($self, $item, $error); 1; }
-                            or do {
-                                last if $stop;
-                                sleep 1;
-                                next;
-                            };
-                            last;
-                        }
-                        if ($die) {
-                            cluck("Stopping because of DieOnError\n");
-                            $stop = 1;
+                        while (my $item = shift @items) {
+                            for (1 .. $MAX_RECONNECT) {
+                                eval { $onerror->($self, $item, $error); 1; }
+                                or do {
+                                    last if $stop; # items might stay in busy mode
+                                    sleep 1;
+                                    next;
+                                };
+                                last;
+                            }
+                            if ($die) {
+                                cluck("Stopping because of DieOnError\n");
+                                $stop = 1;
+                            }
+                            last if $stop;
                         }
                     }
-                    last if $stop;
                 }
-            }
-            my $count = 0;
-            for (1 .. $MAX_RECONNECT) {
-                eval { $count += $self->mark_item_as_done(@done); 1; }
-                or do {
-                    last if $stop;
-                    sleep 1;
-                    next;
-                };
-                last;
-            }
-            warn "not all items removed from busy queue ($count)\n"
-                if $count != @done;
-
-            # put back the claimed but not touched items
-            if (@items > 0) {
-                my $n = @items;
-                print "unclaiming $n items\n";
+                else {
+                    # normal case: process items one by one
+                    while (my $item = shift @items) {
+                        my $ok = eval { $callback->($item->data); 1; };
+                        if ($ok) {
+                            push @done, $item;
+                        }
+                        else {
+                            my $error = _clean_error($@);
+                            # retry if connection is lost
+                            for (1 .. $MAX_RECONNECT) {
+                                eval { $onerror->($self, $item, $error); 1; }
+                                or do {
+                                    last if $stop;
+                                    sleep 1;
+                                    next;
+                                };
+                                last;
+                            }
+                            if ($die) {
+                                cluck("Stopping because of DieOnError\n");
+                                $stop = 1;
+                            }
+                        }
+                        last if $stop;
+                    }
+                }
+                my $count = 0;
                 for (1 .. $MAX_RECONNECT) {
-                    eval { $self->unclaim($_) for @items; 1; }
+                    eval { $count += $self->mark_item_as_done(@done); 1; }
                     or do {
                         last if $stop;
                         sleep 1;
@@ -565,12 +551,29 @@ sub consume {
                     };
                     last;
                 }
+                warn "not all items removed from busy queue ($count)\n"
+                    if $count != @done;
+
+                # put back the claimed but not touched items
+                if (@items > 0) {
+                    my $n = @items;
+                    print "unclaiming $n items\n";
+                    for (1 .. $MAX_RECONNECT) {
+                        eval { $self->unclaim($_) for @items; 1; }
+                        or do {
+                            last if $stop;
+                            sleep 1;
+                            next;
+                        };
+                        last;
+                    }
+                }
+                $stop = 1 if ($maxitems > 0 && ($maxitems -= @done) <= 0)
+                                || ($stop_time > 0 && time() >= $stop_time);
             }
-            $stop = 1 if ($maxitems > 0 && ($maxitems -= @done) <= 0)
-                            || ($stop_time > 0 && time() >= $stop_time);
         }
-    }
-}
+    } # end 'sub consume'
+} # end SCOPE
 
 sub _clean_error {
     $_[0] =~ s/, <GEN0> line [0-9]+//;
