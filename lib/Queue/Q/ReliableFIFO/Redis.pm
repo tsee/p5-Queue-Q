@@ -583,12 +583,12 @@ sub _clean_error {
 
 # methods to be used for cleanup script and Nagios checks
 # the methods read or remove items from the busy queue
-my %known_actions = map { $_ => undef } (qw(requeue drop));
 sub handle_expired_items {
     my ($self, $timeout, $action) = @_;
     $timeout ||= 10;
-    die "timeout should be a number> 0\n" if !int($timeout);
-    die "unknown action\n" if !exists $known_actions{$action};
+    die "timeout should be a number> 0" if not int($timeout);
+    die "unknown action"
+        if not $action or $action !~ /^(?:requeue|drop)$/;
     my $conn = $self->redis_conn;
     my @serial = $conn->lrange($self->_busy_queue, 0, -1);
     my $time = time;
@@ -603,7 +603,8 @@ sub handle_expired_items {
     if ($action eq 'requeue') {
         for my $serial (@timedout) {
             my $item = Queue::Q::ReliableFIFO::Item->new(
-                _serialized => $serial);
+                _serialized => $serial
+            );
             my $n = $self->requeue_busy_item($item);
             push @log, $item if $n;
         }
