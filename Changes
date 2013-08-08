@@ -1,35 +1,39 @@
 Revision history for Perl extension Queue::Q.
 
+0.18 Thu Aug  8 21:48:00 CEST 2013
+  - Non-blocking ReliableFIFO::Redis claim_item_nonblocking
+  - ReliableFIFO::Redis: New option NoSigHandlers for the consume() method
+ 
 0.17 Fri May 24 13:27:47 CEST 2013
-- bugfix with MaxItems in ReliableFIFO/Redis
-- merged branch of ksurrent fixing inconsistent API for ClaimFIFO
+  - bugfix with MaxItems in ReliableFIFO/Redis
+  - merged branch of ksurrent fixing inconsistent API for ClaimFIFO
 
 0.16 Wed May  8 17:23:59 CEST 2013
-- added peek_item
+  - added peek_item
 
 0.15 Tue Apr  9 10:28:19 CEST 2013
-- added clone() method
-- fixed cleanup bug with handle_expired_items
-- fixed typo's in documentation
+  - added clone() method
+  - fixed cleanup bug with handle_expired_items
+  - fixed typo's in documentation
 
 0.14 Wed Mar 20 14:34:03 CET 2013
-- solved bug with stop signal while handling a chunk of items
+  - solved bug with stop signal while handling a chunk of items
 
 0.13 Tue Mar 19 10:26:26 CET 2013
-- added MaxSeconds option for consume()
-- added t_created for Item objects, while default timestamp reflects the 
-  time the item was put in the queue (updated when requeuing).
+  - added MaxSeconds option for consume()
+  - added t_created for Item objects, while default timestamp reflects the 
+    time the item was put in the queue (updated when requeuing).
 
 0.12 Mon Feb 18 12:01:34 CET 2013
-- added option ReturnWhenEmpty, back to same defaults
-- rolled back fix for unclaiming
+  - added option ReturnWhenEmpty, back to same defaults
+  - rolled back fix for unclaiming
 
 0.11 Fri Feb 15 16:00:00 CET 2013
-- Added two options for get_and_flush_failed_items()
-- Fix fifo-cli for non-system Perl usage
-- Fix claim_wait_timeout being ignored in consume
-- Attempt to fix bug with unclaiming/requeueing
-  __requeue_busy: used by unclaim, requeue_busy_item, and requeue_busy_error
+  - Added two options for get_and_flush_failed_items()
+  - Fix fifo-cli for non-system Perl usage
+  - Fix claim_wait_timeout being ignored in consume
+  - Attempt to fix bug with unclaiming/requeueing
+    __requeue_busy: used by unclaim, requeue_busy_item, and requeue_busy_error
 
 0.10 Fri Feb  1 16:40:49 CET 2013
   - solved bug with negative sleep time
