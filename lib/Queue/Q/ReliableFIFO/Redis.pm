@@ -26,6 +26,7 @@ use Class::XSAccessor {
                 _failed_queue
                 _time_queue
                 _script_cache
+                _lua
                 )],
     setters => { 
         set_requeue_limit => 'requeue_limit',
@@ -33,39 +34,39 @@ use Class::XSAccessor {
         set_claim_wait_timeout => 'claim_wait_timeout',
     }
 };
-my %queue_type = map { $_ => undef } (qw(main busy failed time));
+my %QueueType = map { $_ => undef } (qw(main busy failed time));
 
-my %allowed_new_params = map { $_ => undef } (qw(
+my %AllowedNewParams = map { $_ => undef } (qw(
     server port db queue_name busy_expiry_time
     claim_wait_timeout requeue_limit redis_conn redis_options));
-my %required_new_params = map { $_ => undef } (qw(server port queue_name));
 
 sub new {
     my ($class, %params) = @_;
-    for (keys %required_new_params) {
+    for (qw(server port queue_name)) {
         croak("Need '$_' parameter")
             if not exists $params{$_};
     }
     for (keys %params) {
-        croak("Unknown parameter $_")
-            if not exists $allowed_new_params{$_};
+        croak("Invalid parameter '$_'")
+            if not exists $AllowedNewParams{$_};
     }
 
     my $self = bless({
-        requeue_limit => 5,
-        busy_expiry_time => 30,
+        requeue_limit      => 5,
+        busy_expiry_time   => 30,
         claim_wait_timeout => 1,
-        db => 0,
+        db                 => 0,
         %params
     } => $class);
-    $self->{"_$_" . '_queue'}   = $params{queue_name} . "_$_"
-        for (keys %queue_type);
+    $self->{"_$_" . '_queue'} = $params{queue_name} . "_$_"
+        for keys %QueueType;
 
+    $self->{redis_options} ||= { reconnect => 60 };
     $self->{redis_conn} ||= Redis->new(
-            # by default, auto-reconnect during 60 seconds
-            %{$self->{redis_options} ||= { reconnect => 60 }},
-            encoding => undef, # force undef for binary data
-            server => join(":", $self->server, $self->port),
+        # by default, auto-reconnect during 60 seconds
+        %{$self->{redis_options}},
+        encoding => undef, # force undef for binary data
+        server => join(":", $self->server, $self->port),
     );
 
     $self->redis_conn->select($self->db) if $self->db;
@@ -78,8 +79,10 @@ sub new {
 
 sub clone {
     my ($class, $org, %params) = @_;
-    my %default = map { $_, $org->{$_} } grep { m/^[a-zA-Z]/ } keys %$org;
-    return $class->new( %default, %params);
+    my %default = map { $_ => $org->{$_} }
+                  grep m/^[a-zA-Z]/,
+                  keys %$org;
+    return $class->new(%default, %params);
 }
 
 sub enqueue_item {
@@ -105,9 +108,9 @@ sub claim_item {
             ||
             $self->redis_conn->brpoplpush(
                 $self->_main_queue, $self->_busy_queue, $timeout);
-        return if !$v;
+        return if not $v;
         my $item;
-        eval { ($item) = Queue::Q::ReliableFIFO::Item->new(_serialized => $v);};
+        eval { ($item) = Queue::Q::ReliableFIFO::Item->new(_serialized => $v); };
         return $item;
     }
     else {
@@ -201,7 +204,7 @@ sub __requeue_busy  {
     my $error = shift;  # error message
     my $n = 0;
     eval {
-        $n += $self->{_lua}->call(
+        $n += $self->_lua->call(
             'requeue_busy',
             3, 
             $self->_busy_queue,
@@ -225,7 +228,7 @@ sub requeue_failed_item {
     my $self = shift;
     my $n = 0;
     eval {
-        $n += $self->{_lua}->call(
+        $n += $self->_lua->call(
             'requeue_failed_item',
             2, 
             $self->_failed_queue,
@@ -245,7 +248,7 @@ sub requeue_failed_item {
 sub requeue_failed_items {
     my $self = shift;
     my $limit = shift || 0;
-    my $n = $self->{_lua}->call(
+    my $n = $self->_lua->call(
         'requeue_failed',
         2,
         $self->_failed_queue,
@@ -349,7 +352,7 @@ sub _raw_items {
 sub __validate_type {
     my $type = shift;
     $$type ||= 'main';
-    croak("Unknown queue type $$type") if ! exists $queue_type{$$type};
+    croak("Unknown queue type $$type") if ! exists $QueueType{$$type};
 }
 
 sub memory_usage_perc {
