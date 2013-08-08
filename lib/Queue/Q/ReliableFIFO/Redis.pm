@@ -34,11 +34,8 @@ use Class::XSAccessor {
         set_claim_wait_timeout => 'claim_wait_timeout',
     }
 };
-my %QueueType = map { $_ => undef } (qw(main busy failed time));
 
-my %AllowedNewParams = map { $_ => undef } (qw(
-    server port db queue_name busy_expiry_time
-    claim_wait_timeout requeue_limit redis_conn redis_options));
+my %QueueType = map { $_ => undef } (qw(main busy failed time));
 
 sub new {
     my ($class, %params) = @_;
@@ -46,6 +43,10 @@ sub new {
         croak("Need '$_' parameter")
             if not exists $params{$_};
     }
+
+    my %AllowedNewParams = map { $_ => undef } (qw(
+        server port db queue_name busy_expiry_time
+        claim_wait_timeout requeue_limit redis_conn redis_options));
     for (keys %params) {
         croak("Invalid parameter '$_'")
             if not exists $AllowedNewParams{$_};
@@ -111,6 +112,7 @@ sub claim_item {
         return if not $v;
         my $item;
         eval { ($item) = Queue::Q::ReliableFIFO::Item->new(_serialized => $v); };
+        # FIXME ignoring exception in eval{}!
         return $item;
     }
     else {
@@ -188,10 +190,12 @@ sub requeue_busy_item {
     my ($self, $raw) = @_;
     return $self->__requeue_busy(0, undef, $raw);
 }
+
 sub requeue_busy {
     my $self = shift;
     return $self->__requeue_busy(0, undef, @_);
 }
+
 sub requeue_busy_error {
     my $self = shift;
     my $error= shift;
@@ -219,7 +223,7 @@ sub __requeue_busy  {
         1;
     }
     or do {
-        cluck("lua call went wrong! $@");
+        cluck("Lua call went wrong! $@");
     };
     return $n;
 }
@@ -240,7 +244,7 @@ sub requeue_failed_item {
         1;
     }
     or do {
-        cluck("lua call went wrong! $@");
+        cluck("Lua call went wrong! $@");
     };
     return $n;
 }
@@ -254,9 +258,10 @@ sub requeue_failed_items {
         $self->_failed_queue,
         $self->_main_queue,
         time(),
-        $limit);
+        $limit
+    );
     if (!defined $n) {
-        cluck("lua call went wrong! $@");
+        cluck("Lua call went wrong! $@");
     }
     return $n;
 }
@@ -331,17 +336,20 @@ sub raw_items_main {
     my $self = shift;
     return $self->_raw_items('main', @_);
 }
+
 sub raw_items_busy {
     my $self = shift;
     return $self->_raw_items('busy', @_);
 }
+
 sub raw_items_failed {
     my $self = shift;
     return $self->_raw_items('failed', @_);
 }
+
 sub _raw_items {
     my ($self, $type, $n) = @_;
-    __validate_type(\$type);
+    #__validate_type(\$type); # truism, cf. the ten lines above this
     $n ||= 0;
     my $qn = $self->queue_name . "_$type";
     return
@@ -352,7 +360,8 @@ sub _raw_items {
 sub __validate_type {
     my $type = shift;
     $$type ||= 'main';
-    croak("Unknown queue type $$type") if ! exists $QueueType{$$type};
+    croak("Unknown queue type $$type")
+        if not exists $QueueType{$$type};
 }
 
 sub memory_usage_perc {
@@ -606,14 +615,15 @@ sub handle_expired_items {
                 _serialized => $serial
             );
             my $n = $self->requeue_busy_item($item);
-            push @log, $item if $n;
+            push @log, $item
+                if $n;
         }
     }
     elsif ($action eq 'drop') {
         for my $serial (@timedout) {
             my $n = $conn->lrem( $self->_busy_queue, -1, $serial);
-            push @log, Queue::Q::ReliableFIFO::Item->new(
-                                _serialized => $serial) if ($n);
+            push @log, Queue::Q::ReliableFIFO::Item->new(_serialized => $serial)
+                if $n;
         }
     }
 
@@ -711,7 +721,7 @@ an implementation based on Redis.
 The data structures passed to C<enqueue_item> are serialized
 using JSON (cf. L<JSON::XS>), so
 any data structures supported by that can be enqueued.
-We use JSON because that is supported at the lua side as well (the cjson
+We use JSON because that is supported at the Lua side as well (the cjson
 library).
 
 The implementation is kept very lightweight at the Redis level
