@@ -19,7 +19,7 @@ use Class::XSAccessor {
                 busy_expiry_time
                 claim_wait_timeout
                 requeue_limit
-                redis_conn 
+                redis_conn
                 redis_options
                 _main_queue
                 _busy_queue
@@ -28,7 +28,7 @@ use Class::XSAccessor {
                 _script_cache
                 _lua
                 )],
-    setters => { 
+    setters => {
         set_requeue_limit => 'requeue_limit',
         set_busy_expiry_time => 'busy_expiry_time',
         set_claim_wait_timeout => 'claim_wait_timeout',
@@ -103,7 +103,7 @@ sub claim_item {
         # rpoplpush gives higher throughput than the blocking version
         # (i.e. brpoplpush). So use the blocked version only when we
         # need to wait.
-        my $v = 
+        my $v =
             $self->redis_conn->rpoplpush($self->_main_queue, $self->_busy_queue)
             ||
             $self->redis_conn->brpoplpush(
@@ -126,7 +126,7 @@ sub claim_item {
         eval {
             $conn->rpoplpush($qn, $bq, sub {
                 if (defined $_[0]) {
-                    push @items, 
+                    push @items,
                     Queue::Q::ReliableFIFO::Item->new(_serialized => $_[0])
                 }
             }) for 1..$n;
@@ -140,7 +140,7 @@ sub claim_item {
                     undef $serial;
                     $conn->rpoplpush($qn, $bq, sub {
                         if (defined $_[0]) {
-                            push @items, 
+                            push @items,
                                 Queue::Q::ReliableFIFO::Item->new(
                                     _serialized => $_[0]);
                         }
@@ -179,7 +179,7 @@ sub mark_item_as_done {
     }
 }
 
-sub unclaim  { 
+sub unclaim  {
     my $self = shift;
     return $self->__requeue_busy(1, undef, @_);
 }
@@ -198,20 +198,20 @@ sub requeue_busy_error {
     return $self->__requeue_busy(0, $error, @_);
 }
 
-sub __requeue_busy  { 
-    my $self = shift; 
+sub __requeue_busy  {
+    my $self = shift;
     my $place = shift;  # 0: producer side, 1: consumer side
     my $error = shift;  # error message
     my $n = 0;
     eval {
         $n += $self->_lua->call(
             'requeue_busy',
-            3, 
+            3,
             $self->_busy_queue,
             $self->_main_queue,
             $self->_failed_queue,
             time(),
-            $_->_serialized, 
+            $_->_serialized,
             $self->requeue_limit,
             $place,
             $error || '',
@@ -230,11 +230,11 @@ sub requeue_failed_item {
     eval {
         $n += $self->_lua->call(
             'requeue_failed_item',
-            2, 
+            2,
             $self->_failed_queue,
             $self->_main_queue,
             time(),
-            $_->_serialized, 
+            $_->_serialized,
             $self->requeue_limit,
         ) for @_;
         1;
@@ -268,8 +268,8 @@ sub get_and_flush_failed_items {
     my $now = time();
     die "Unsupported option(s): " . join(', ', keys %options) . "\n"
         if (keys %options);
-    my @failures = 
-        grep { $_->time_created < ($now-$min_age) 
+    my @failures =
+        grep { $_->time_created < ($now-$min_age)
                 || $_->fail_count >= $min_fc }
         $self->raw_items_failed();
     my $conn = $self->redis_conn;
@@ -344,7 +344,7 @@ sub _raw_items {
     __validate_type(\$type);
     $n ||= 0;
     my $qn = $self->queue_name . "_$type";
-    return 
+    return
         map { Queue::Q::ReliableFIFO::Item->new(_serialized => $_); }
         $self->redis_conn->lrange($qn, -$n, -1);
 }
@@ -368,7 +368,7 @@ sub memory_usage_perc {
 my %valid_options       = map { $_ => 1 } (qw(
     Chunk DieOnError MaxItems MaxSeconds ProcessAll Pause ReturnWhenEmpty NoSigHandlers
 ));
-my %valid_error_actions = map { $_ => 1 } (qw(drop requeue ));
+my %valid_error_actions = map { $_ => 1 } (qw(drop requeue));
 
 sub consume {
     my ($self, $callback, $error_action, $options) = @_;
@@ -382,7 +382,7 @@ sub consume {
         'requeue' => sub { my ($self, $item, $error) = @_;
                            $self->requeue_busy_error($error, $item); },
     );
-    my $onerror = $error_subs{$error_action} 
+    my $onerror = $error_subs{$error_action}
         || croak("no handler for $error_action");
 
     $options ||= {};
@@ -457,7 +457,7 @@ sub consume {
                     last;
                 }
             }
-            $stop = 1 if ($maxitems > 0 && --$maxitems == 0) 
+            $stop = 1 if ($maxitems > 0 && --$maxitems == 0)
                             || ($stop_time > 0 && time() >= $stop_time);
         }
     }
@@ -589,7 +589,7 @@ sub handle_expired_items {
     my $conn = $self->redis_conn;
     my @serial = $conn->lrange($self->_busy_queue, 0, -1);
     my $time = time;
-    my %timetable = 
+    my %timetable =
         map { reverse split /-/,$_,2 }
         $conn->lrange($self->_time_queue, 0, -1);
     my @match = grep { exists $timetable{$_} } @serial;
@@ -617,15 +617,15 @@ sub handle_expired_items {
     # exclude:
     # 1. the busy items which timed out and we just handled
     # 2. timetable items which have no corresponding busy items anymore
-    my %timedout = map { $_ => undef } @timedout; 
+    my %timedout = map { $_ => undef } @timedout;
     my %busy = map { $_ => undef } @serial;
-    my %newtimetable = 
-        map  { $_ => $timetable{$_} } 
+    my %newtimetable =
+        map  { $_ => $timetable{$_} }
         grep { exists $busy{$_} }        # exclude (ad 2.)
         grep { ! exists $timedout{$_} }  # exclude (ad 1.)
         keys %timetable;                 # original timetable
     # put in the items of latest scan we did not see before
-    $newtimetable{$_} = $time 
+    $newtimetable{$_} = $time
         for (grep { !exists $newtimetable{$_} } @serial);
     $conn->multi;
     $conn->del($self->_time_queue);
@@ -662,7 +662,7 @@ Queue::Q::ReliableFIFO::Redis - In-memory Redis implementation of the ReliableFI
   # Producer:
   $q->enqueue_item("foo");
   # You can pass any JSON-serializable data structure
-  $q->enqueue_item({ bar => "baz" }); 
+  $q->enqueue_item({ bar => "baz" });
   $q->enqueue_item({ id=> 12},{id =>34});   # two items
   # get rid of everything in the queue:
   $q->flush_queue();    # get a clean state, removes queue
@@ -677,7 +677,7 @@ Queue::Q::ReliableFIFO::Redis - In-memory Redis implementation of the ReliableFI
   while (1) {
       my @handled_items = $q->handle_expired_items($timeout, $action);
       for my $item (@handled_items) {
-          printf "%s: item %s, in queue since %s, requeued % times\n", 
+          printf "%s: item %s, in queue since %s, requeued % times\n",
               $action, Dumper($item->data),
               scalar localtime $item->time,
               $item->requeue_count;
@@ -751,7 +751,7 @@ B<Important note>:
 At the Redis level a lost connection will always throw an
 exception, even if auto-reconnect is switched on.
 As consequence, the methods that do redis commands, like
-enqueue_item(), claim_item() and 
+enqueue_item(), claim_item() and
 mark_item_as_done(), will throw an exception when the connection to the
 Redis server is lost. The consume() method handles these exceptions.
 For other methods you need to catch and handle the exception.
@@ -807,7 +807,7 @@ to create another queue object.
 
 =head2 enqueue_item(@items)
 
-Special for the Redis imlementation is that the C<return value> is 
+Special for the Redis imlementation is that the C<return value> is
 the length of the queue after the items are added.
 
 =head2 consume(\&callback, $action, %options)
@@ -834,11 +834,11 @@ This method also uses B<claim_wait_timeout>.
 =over
 
 =item * B<requeue>. (C<Default>). I.e. do it again, the item will be put at the
-tail of the queue. The requeue_limit property is the queue indicates 
+tail of the queue. The requeue_limit property is the queue indicates
 the limit to how many times an item can be requeued.
 The default is 5 times. You can change that by setting by calling
 the set_requeue_limit() method or by passing the property to the
-constructor. When the requeue limit is reached, the item will go 
+constructor. When the requeue limit is reached, the item will go
 to the failed queue.
 
 Note: by setting the queue_limit to "0" you can force the item to
@@ -857,14 +857,14 @@ go to the "failed" status right away (without being requeued).
 for number of items to claim and to mark as done in one go.
 This helps to fight latency.
 
-=item * B<DieOnError>.  
-If this option has a true value, the consumer will stop when the 
+=item * B<DieOnError>.
+If this option has a true value, the consumer will stop when the
 callback function returns a "die" call. Default "false".
 
 =item * B<MaxItems>
 This can be used to limit the consume method to process only a limited amount
 of items, which can be useful in cases of memory leaks. When you use
-this option, you will probably need to look into restarting 
+this option, you will probably need to look into restarting
 strategies with cron. Of course this comes with delays in handling the
 items.
 
@@ -874,20 +874,20 @@ amount of time.
 
 =item * B<ReturnWhenEmpty>
 Use this when you want to let consume() return when the queue is empty.
-Note that comsume will wait for 
+Note that comsume will wait for
 claim_wait_timeout seconds until it can come to the conclusion
 that the queue is empty.
 
 =item * B<Pause>.
 This can be used to give the queue some time to grow, so that more
-items at the time can be claimed. The value of Pause is in seconds and 
+items at the time can be claimed. The value of Pause is in seconds and
 can be a fraction of a second (e.g. 0.5).
 Default value is 0. This option only makes sense if
 larger Chunks are read from the queue (so together with option "Chunk").
 
 =item * B<ProcessAll>.
 This can be used to process all claimed items by one invocation of
-the callback function. The value of ProcessAll should be a true or false 
+the callback function. The value of ProcessAll should be a true or false
 value. Default value is "0". Note that this changes the @_ content of
 callback: normally the callback function is called with one item
 data structure, while in this case @_ will contain an array with item
@@ -913,7 +913,7 @@ Examples:
 =head2 @item_obj = $q->handle_expired_items($timeout, $action);
 
 This method can be used by a cleanup job to ensure that items don't
-stick forever in the B<busy> status. When an item has been in this status 
+stick forever in the B<busy> status. When an item has been in this status
 for $timeout seconds, the action specified by the $action will be done.
 The $action parameter is the same as with the consume() method.
 
@@ -927,7 +927,7 @@ set_requeue_limit.
 
 Once an item is moved to the failed queue, the counter is reset. The
 item can be put back into the main queue by using the requeue_failed_items()
-method (or via the CLI). Then it will be retried again up to 
+method (or via the CLI). Then it will be retried again up to
 requeue_limit times.
 
 =head2 my $count = $q->unclaim(@items)
@@ -942,7 +942,7 @@ items are processed.
 
 This puts items that are claimed back to the queue so that other consumers
 can pick this up. In this case the items are put at the back of the queue,
-so depending the queue length it can take some time before it is 
+so depending the queue length it can take some time before it is
 available for consumers.
 
 =head2 my $count = $q->requeue_failed_items([ $limit ]);
