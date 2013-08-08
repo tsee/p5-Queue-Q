@@ -6,7 +6,7 @@ use Carp qw(croak);
 use Class::XSAccessor {
     getters => [qw(redis_conn script_dir)]
 };
-my %scripts;
+my %Scripts;
 
 sub new {
     my $class = shift;
@@ -39,10 +39,10 @@ sub register {
         }
     }
     else {
-        croak("script $name not found") if $name && !exists $scripts{$name};
+        croak("script $name not found") if $name && !exists $Scripts{$name};
         my @names = $name ? ($name) : (keys %script);
         for my $scr_name (@names) {
-            my $script = $scripts{$scr_name};
+            my $script = $Scripts{$scr_name};
             my $sha1 = Digest::SHA1::sha1_hex($script);
             my ($found) = @{$self->redis_conn->script_exists($sha1)};
             if (!$found) {
@@ -63,7 +63,10 @@ sub call {
     return $self->redis_conn->evalsha($sha1, @_);
 }
 
-%scripts = (
+##################################
+# Start of Lua script section
+%Scripts = (
+
 requeue_busy => q{
 -- requeue_busy (depending requeue limit items will be requeued or fail)
 -- # KEYS[1] from queue name (busy queue)
@@ -134,6 +137,8 @@ if n > 0 then
 end
 return n
 },
+
+##########################
 requeue_failed => q{
 -- requeue_failed: requeue a given number of failed items
 -- # KEYS[1] from queue name (failed queue)
@@ -171,6 +176,8 @@ for i = 1, num do
 end
 return n
 },
+
+#########################
 requeue_failed_item => q{
 -- Requeue_busy_items
 -- # KEYS[1] from queue name (failed queue)
@@ -200,7 +207,8 @@ if n > 0 then
     redis.call('lpush', dest, v)
 end
 return n
-});
+}
+);
 
 1;
 
@@ -221,23 +229,23 @@ Queue::Q::ReliableFIFO::Lua - Load lua scripts into Redis
 
 =head1 DESCRIPTION
 
-This module offers two ways of loading/running lua scripts.
+This module offers two ways of loading/running Lua scripts.
 
 One way
-is with separate lua scripts, which live at a location as indicated
-by the script_dir parameter (passed to the constructor) or as 
-indicated by the LUA_SCRIPT_DIR environment variable.
+is with separate Lua scripts, which live at a location as indicated
+by the C<script_dir> parameter (passed to the constructor) or as 
+indicated by the C<LUA_SCRIPT_DIR> environment variable.
 
-The other way is by putting the source code of the lua scripts in
-this module, in the %scripts hash.
+The other way is by putting the source code of the Lua scripts in
+this module, in the C<%Scripts> hash.
 
 Which way is actually used depends on whether or not passing info
-about a path to lua scripts. If a lua script location is known, those
-script will be used, otherwise the %scripts code is used.
+about a path to Lua scripts. If a Lua script location is known, those
+script will be used, otherwise the C<%Scripts> code is used.
 
-During development it is more conveniant to use the separate lua files
-of course. But for deploying it is less error prone if the lua code
-is inside the perl module. So that is why this is done this way.
+During development it is more convenient to use the separate Lua files
+of course. But for deploying it is less error prone if the Lua code
+is inside the Perl module. So that is why this is done this way.
 
 The scripts are loaded when the constructor is called.
 
