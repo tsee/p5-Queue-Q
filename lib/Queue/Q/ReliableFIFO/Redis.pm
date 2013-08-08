@@ -161,6 +161,11 @@ sub mark_item_as_done {
             $self->_busy_queue, -1, $_[0]->_serialized);
     }
     else {
+        # TODO since lrem is an O(n) operation in size of busy list,
+        #      there's a crossover point at which having l items to remove
+        #      from said list is better done in a single O(n) loop through
+        #      the list (in Lua?) rather than in l*O(n)=O(ln) operations via
+        #      _lrem!
         my $conn = $self->redis_conn;
         my $count = 0;
         $conn->lrem(
