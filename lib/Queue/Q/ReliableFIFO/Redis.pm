@@ -96,22 +96,35 @@ sub enqueue_item {
     );
 }
 
+use constant NONBLOCKING => 0;
+use constant BLOCKING => 1;
+
 sub claim_item {
     my ($self, $n) = @_;
+    return $self->_claim_item_internal($n, BLOCKING);
+}
+
+sub claim_item_nonblocking {
+    my ($self, $n) = @_;
+    return $self->_claim_item_internal($n, NONBLOCKING);
+}
+
+sub _claim_item_internal {
+    my ($self, $n, $doblocking) = @_;
     $n ||= 1;
     my $timeout = $self->claim_wait_timeout;
     if ($n == 1) {
         # rpoplpush gives higher throughput than the blocking version
         # (i.e. brpoplpush). So use the blocked version only when we
         # need to wait.
-        my $v =
-            $self->redis_conn->rpoplpush($self->_main_queue, $self->_busy_queue)
-            ||
-            $self->redis_conn->brpoplpush(
-                $self->_main_queue, $self->_busy_queue, $timeout);
-        return if not $v;
+        my $value;
+        $value = $self->redis_conn->rpoplpush($self->_main_queue, $self->_busy_queue);
+        if (not defined($value) and $doblocking == BLOCKING) {
+            $self->redis_conn->brpoplpush($self->_main_queue, $self->_busy_queue, $timeout);
+        }
+        return if not $value;
         my $item;
-        eval { ($item) = Queue::Q::ReliableFIFO::Item->new(_serialized => $v); };
+        eval { ($item) = Queue::Q::ReliableFIFO::Item->new(_serialized => $value); };
         # FIXME ignoring exception in eval{}!
         return $item;
     }
@@ -121,7 +134,8 @@ sub claim_item {
         my $bq = $self->_busy_queue;
         my @items;
         my $serial;
-        if ($n > 100) {
+        if ($n > 30) {
+            # yes, there is a race, but it's an optimization only
             my ($l) = $self->redis_conn->llen($qn);
             $n = $l if $l < $n;
         }
@@ -133,7 +147,7 @@ sub claim_item {
                 }
             }) for 1..$n;
             $conn->wait_all_responses;
-            if (@items == 0) {
+            if (@items == 0 && $doblocking == BLOCKING) {
                 # list seems empty, use the blocking version
                 $serial = $conn->brpoplpush($qn, $bq, $timeout);
                 if (defined $serial) {
@@ -824,7 +838,17 @@ to create another queue object.
 Special for the Redis imlementation is that the return value is
 the length of the queue after the items are added.
 
-=head2 my $item = claim_item
+=head2 claim_item($count)
+
+Attempts to claim C<$count> items from the main queue and
+atomically transfers them to the busy queue. Returns the items as
+C<Queue::Q::ReliableFIFO::Item> objects (as a list for C<$count E<gt> 1>).
+C<$count> defaults to 1. Will block for C<claim_wait_timeout> seconds.
+
+=head2 claim_item_nonblocking($count)
+
+Same as C<claim_item>, but non-blocking.
+
 =head2 consume(\&callback, $action, %options)
 
 This method is called by the consumer to consume the items of a
@@ -1038,7 +1062,7 @@ Steffen Mueller, E<lt>smueller@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2012 by Steffen Mueller
+Copyright (C) 2012-2013 by Steffen Mueller
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.8.1 or,

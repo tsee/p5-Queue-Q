@@ -8,7 +8,7 @@ sub qlen_claimcount {
     my ($q, $qlen, $claimcount, $name) = @_;
     $name = defined($name) ? "($name)" : "";
     is($q->queue_length, $qlen, "Queue length is $qlen $name");
-    is($q->queue_length('busy'), $claimcount, "Reliableed count is $claimcount $name");
+    is($q->queue_length('busy'), $claimcount, "Claimed count is $claimcount $name");
 }
 
 sub test_claim_fifo {
@@ -35,7 +35,7 @@ sub test_claim_fifo {
     $q->mark_item_as_done($item);
     qlen_claimcount($q, 12, 0, "4");
 
-    $item = $q->claim_item();
+    $item = $q->claim_item_nonblocking(); # throw a nonblocking call into the mix
     isa_ok($item, "Queue::Q::ReliableFIFO::Item");
     is_deeply($item->data, [2], "Fetching one item, 2");
     qlen_claimcount($q, 11, 1, "5");
@@ -67,18 +67,30 @@ sub test_claim_fifo {
 
     is_deeply([map $_->data, @items2[0..7]], [155..161, {foo => "bar"}], "Fetching items via claim_item");
 
-
     $item = $q->claim_item();
     ok(!defined($item));
     qlen_claimcount($q, 0, 11, "12");
 
+    $item = $q->claim_item_nonblocking();
+    ok(!defined($item));
+    qlen_claimcount($q, 0, 11, "13");
+
+    my @items3 = $q->claim_item_nonblocking(5);
+    ok(!@items3);
+    qlen_claimcount($q, 0, 11, "14");
+
+    @items3 = $q->claim_item_nonblocking(3500); # anything large
+    ok(!@items3);
+    qlen_claimcount($q, 0, 11, "15");
+
+
     $q->mark_item_as_done(grep defined, @items2);
-    qlen_claimcount($q, 0, 3, "13");
+    qlen_claimcount($q, 0, 3, "16");
     $q->mark_item_as_done($_) for reverse @items;
-    qlen_claimcount($q, 0, 0, "14");
+    qlen_claimcount($q, 0, 0, "17");
 
     $q->mark_item_as_done($items[0]);
-    qlen_claimcount($q, 0, 0, "15");
+    qlen_claimcount($q, 0, 0, "18");
 }
 
 1;
