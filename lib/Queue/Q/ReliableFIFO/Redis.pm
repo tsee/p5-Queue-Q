@@ -764,10 +764,10 @@ how long items are in the busy list (see method handle_expired_items()).
 B<Important note>:
 At the Redis level a lost connection will always throw an
 exception, even if auto-reconnect is switched on.
-As consequence, the methods that do redis commands, like
-enqueue_item(), claim_item() and
-mark_item_as_done(), will throw an exception when the connection to the
-Redis server is lost. The consume() method handles these exceptions.
+As consequence, the methods that do Redis commands, like
+C<enqueue_item()>, C<claim_item()> and
+C<mark_item_as_done()>, will throw an exception when the connection to the
+Redis server is lost. The C<consume()> method handles these exceptions.
 For other methods you need to catch and handle the exception.
 
 All methods of L<Queue::Q::ReliableFIFO>. Other methods are:
@@ -794,22 +794,22 @@ Optional parameters are
 
 =item B<redis_options> for connection options
 
-=item B<redis_connection> for reusing an existing redis connection
+=item B<redis_connection> for reusing an existing Redis connection
 
 =item B<requeue_limit> to specify how often an item is allowed to
 enter the queue again before ending up in the failed queue.
 C<Default value is 5>.
 
 =item B<claim_wait_timeout> (in seconds) to specify how long the
-claim_item() method is allowed to wait before it returns.
+C<claim_item()> method is allowed to wait before it returns.
 This applies to the situation with an empty queue.
 A value of "0" means "wait forever".
 C<Default value is 1>.
 
 =item B<busy_expiry_time> to specify the threshold (in seconds)
 after which an item is supposed to get stuck. After this time a follow
-up strategy should be applied. (Normally done by the handle_expired_items()
-Method, typically done by a cronjob).
+up strategy should be applied. (Normally done by the C<handle_expired_items()>
+method, typically done by a cronjob).
 C<Default value is 30>.
 
 =back
@@ -821,9 +821,10 @@ to create another queue object.
 
 =head2 enqueue_item(@items)
 
-Special for the Redis imlementation is that the C<return value> is
+Special for the Redis imlementation is that the return value is
 the length of the queue after the items are added.
 
+=head2 my $item = claim_item
 =head2 consume(\&callback, $action, %options)
 
 This method is called by the consumer to consume the items of a
@@ -833,15 +834,15 @@ as parameter. While the consume method deals with the queue related
 actions, like claiming, "marking as done" etc, the callback function
 only deals with processing the item.
 
-The $action parameter is applied when the callback function returns
+The C<$action> parameter is applied when the callback function returns
 a "die". Allowed values are:
 
 By default, the consume method will keep on reading the queue forever or
 until the process receives a SIGINT or SIGTERM signal. You can make the
-consume method return earlier by using one of the options MaxItems,
-MaxSeconds or ReturnWhenEmpty. If you still want to have a "near real time"
+consume method return earlier by using one of the options C<MaxItems>,
+C<MaxSeconds> or C<ReturnWhenEmpty>. If you still want to have a "near real time"
 behavior you need to make sure there are always consumers running,
-which can be archived using cron and IPC::ConcurrencyLimit::WithStandby.
+which can be achieved using cron and C<IPC::ConcurrencyLimit::WithStandby>.
 
 This method also uses B<claim_wait_timeout>.
 
@@ -851,7 +852,7 @@ This method also uses B<claim_wait_timeout>.
 tail of the queue. The requeue_limit property is the queue indicates
 the limit to how many times an item can be requeued.
 The default is 5 times. You can change that by setting by calling
-the set_requeue_limit() method or by passing the property to the
+the C<set_requeue_limit()> method or by passing the property to the
 constructor. When the requeue limit is reached, the item will go
 to the failed queue.
 
@@ -863,7 +864,7 @@ go to the "failed" status right away (without being requeued).
 =back
 
 
-=head3 options
+=head3 Options
 
 =over
 
@@ -1021,7 +1022,7 @@ the main queue can be large, so a limit is strongly recommended here.
 
 =head2 my $memory_usage = $q->memory_usage_perc();
 
-Returns the memory usage percentage of the redis instance where the queue
+Returns the memory usage percentage of the Redis instance where the queue
 is located.
 
 =head2 peek_item([$type])
