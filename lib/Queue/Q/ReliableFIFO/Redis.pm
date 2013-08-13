@@ -120,7 +120,7 @@ sub _claim_item_internal {
         my $value;
         $value = $self->redis_conn->rpoplpush($self->_main_queue, $self->_busy_queue);
         if (not defined($value) and $doblocking == BLOCKING) {
-            $self->redis_conn->brpoplpush($self->_main_queue, $self->_busy_queue, $timeout);
+            $value = $self->redis_conn->brpoplpush($self->_main_queue, $self->_busy_queue, $timeout);
         }
         return if not $value;
         my $item;
