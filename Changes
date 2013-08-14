@@ -1,5 +1,8 @@
 Revision history for Perl extension Queue::Q.
 
+0.19 Wed Aug 14 16:44:45 CEST 2013
+  - bugfix to have ReliableFIFO::Redis working again in non blocking mode
+
 0.18 Thu Aug  8 21:48:00 CEST 2013
   - Non-blocking ReliableFIFO::Redis claim_item_nonblocking
   - ReliableFIFO::Redis: New option NoSigHandlers for the consume() method
