@@ -7,7 +7,7 @@ use parent 'Queue::Q::ReliableFIFO';
 use Queue::Q::ReliableFIFO::Item;
 use Queue::Q::ReliableFIFO::Lua;
 use Redis;
-use Time::HiRes;
+use Time::HiRes qw(usleep);
 use Data::Dumper;
 
 use Class::XSAccessor {
@@ -25,6 +25,8 @@ use Class::XSAccessor {
                 _busy_queue
                 _failed_queue
                 _time_queue
+                _temp_queue
+                _log_queue
                 _script_cache
                 _lua
                 )],
@@ -35,7 +37,7 @@ use Class::XSAccessor {
     }
 };
 
-my %QueueType = map { $_ => undef } (qw(main busy failed time));
+my %QueueType = map { $_ => undef } (qw(main busy failed time temp log));
 
 sub new {
     my ($class, %params) = @_;
@@ -243,18 +245,27 @@ sub __requeue_busy  {
 }
 
 sub requeue_failed_item {
+    #
+    # **deprecated ***
+    # This can stress Redis very hard when there are many failed items.
+    # The lrem operation does a scan. If the item is not
+    # at the position where the lrem-search start, the scan goes on.
+    # A sleep is added in case the method is called for multiple items.
+    #
     my $self = shift;
     my $n = 0;
     eval {
-        $n += $self->_lua->call(
-            'requeue_failed_item',
-            2,
-            $self->_failed_queue,
-            $self->_main_queue,
-            time(),
-            $_->_serialized,
-            $self->requeue_limit,
-        ) for @_;
+        for (@_) {
+            $n += $self->_lua->call(
+                'requeue_failed_item',
+                2,
+                $self->_failed_queue,
+                $self->_main_queue,
+                time(),
+                $_->_serialized,
+            );
+            usleep(1e5);
+        }
         1;
     }
     or do {
@@ -265,38 +276,98 @@ sub requeue_failed_item {
 
 sub requeue_failed_items {
     my $self = shift;
-    my $limit = shift || 0;
-    my $n = $self->_lua->call(
-        'requeue_failed',
-        2,
-        $self->_failed_queue,
-        $self->_main_queue,
-        time(),
-        $limit
-    );
-    if (!defined $n) {
-        cluck("Lua call went wrong! $@");
+    if (@_ == 1) {
+        # old API
+        my $limit = shift;
+        my $n = $self->_lua->call(
+            'requeue_failed',
+            2,
+            $self->_failed_queue,
+            $self->_main_queue,
+            time(),
+            $limit
+        );
+        if (!defined $n) {
+            cluck("Lua call went wrong! $@");
+        }
+        return $n;
     }
-    return $n;
+    my %options = @_;
+    # delay: how long before trying again after a (temporary) fail
+    my $delay   = delete $options{Delay}        || 0;
+    my $max_fc  = delete $options{MaxFailCount} || 0;
+    my $chunk   = delete $options{Chunk}        || 100;
+    cluck("Invalid option: $_") for (keys %options);
+
+    my $total_requeued = 0;
+    if ($self->queue_length('failed') > 0) {
+        my ($todo, $requeued) = (0,0);
+        do {
+            ($todo, $requeued) = split(/\s+/, $self->_lua->call(
+                'requeue_failed_gentle',
+                3,
+                $self->_failed_queue,
+                $self->_main_queue,
+                $self->_temp_queue,
+                time(),
+                $chunk,
+                $delay,
+                $max_fc,
+            ));
+            $total_requeued += $requeued;
+            usleep(1e5);
+        }
+        while($todo > 0);
+    }
+    return $total_requeued;
 }
 
 sub get_and_flush_failed_items {
+    # depreacted, use remove_failed_items
     my ($self, %options) = @_;
-    my $min_age = delete $options{MinAge} || 0;
-    my $min_fc = delete $options{MinFailCount} || 0;
-    my $now = time();
-    die "Unsupported option(s): " . join(', ', keys %options) . "\n"
-        if (keys %options);
-    my @failures =
-        grep { $_->time_created < ($now-$min_age)
-                || $_->fail_count >= $min_fc }
-        $self->raw_items_failed();
+    my (undef, $failures) = $self->remove_failed_items(%options);
+    return @$failures;
+}
+
+sub remove_failed_items {
+    my ($self, %options) = @_;
+    my $min_age = delete $options{MinAge}       || 0;
+    my $min_fc  = delete $options{MinFailCount} || 0;
+    my $chunk   = delete $options{Chunk}        || 100;
+    my $loglimit= delete $options{LogLimit}     || 100;
+    cluck("Invalid option: $_") for (keys %options);
+
+    my $total_removed= 0;
+    if ($self->queue_length('failed') > 0) {
+        my ($todo, $removed) = (0,0);
+        do {
+            my $now = time();
+            ($todo, $removed) = split(/\s+/, $self->_lua->call(
+                'remove_failed_gentle',
+                3,
+                $self->_failed_queue,
+                $self->_temp_queue,
+                $self->_log_queue,
+                $now,
+                $chunk,
+                ($now - $min_age),
+                $min_fc,
+                $loglimit,
+            ));
+            $total_removed += $removed;
+            usleep(1e5);
+        }
+        while($todo > 0);
+    }
+    return (0,[])
+        if $total_removed == 0;
+
     my $conn = $self->redis_conn;
-    my $name = $self->_failed_queue;
-    $conn->multi;
-    $conn->lrem($name, -1, $_->_serialized) for (@failures);
-    $conn->exec;
-    return @failures;
+    my @serial = 
+        map { Queue::Q::ReliableFIFO::Item->new(_serialized => $_) }
+        $conn->lrange($self->_log_queue, 0, -1);
+    $conn->del($self->_log_queue);
+    return ($total_removed, \@serial);
 }
 
 sub flush_queue {
@@ -714,7 +785,10 @@ Queue::Q::ReliableFIFO::Redis - In-memory Redis implementation of the ReliableFI
   }
   # retry items that failed before:
   $q->requeue_failed_items();
-  $q->requeue_failed_items(10); # only the first 10 items
+  $q->requeue_failed_items(
+    MaxFailCount => 3,  # only requeue if the item failed at least 3 times
+    Delay => 3600,      # only requeue if the previous fail is at least 1 hour ago
+  );
 
   # Nagios?
   $q->queue_length();
@@ -984,16 +1058,41 @@ can pick this up. In this case the items are put at the back of the queue,
 so depending the queue length it can take some time before it is
 available for consumers.
 
-=head2 my $count = $q->requeue_failed_items([ $limit ]);
+=head2 my $count = $q->requeue_failed_items(%options);
 
 This method will move items from the failed queue to the
-working queue. The $limit parameter is optional and can be used to move
-only a subset to the working queue.
+working queue. The %options can be used to restrict what should be requeued.
 The number of items actually moved will be the return value.
+
+=over
+
+=item * B<MaxFailCount>
+Filters out items with less than MaxFailCount failures. Default: 0
+
+=item * B<Delay>
+Filters out items that failed at least Delay seconds ago. Default: 0.
+
+=item * B<Chunk>
+Performance related: amount of items to handle in one lua call.
+Higher values will result in higher throughput, but more stress on Redis.
+Default: 100.
+
+An item will only be requeued if B<both> criteria (MaxFailCount and Delay
+are met.
+
+=back
+
+NOTE:
+Previous versions supported a single "limit" parameter to requeue only
+a few items.  This API is still supported but may go away in the future.
 
 =head2 my $count = $q->requeue_failed_item(@raw_items)
 
-This method will move the specified item to the main queue so that it
+** deprecated **
+This method can stress Redis really hard when the queue is very long.
+If you want to requeue items, use requeue_failed_items() instead.
+
+This method will move the specified item(s) to the main queue so that it
 will be processed again. It will return 0 or 1 (i.e. the number of items
 moved).
 
@@ -1003,8 +1102,14 @@ Same as requeue_busy, it only accepts one value instead of a list.
 
 =head2 my @raw_failed_items = $q->get_and_flush_failed_items(%options);
 
-This method will read all existing failed items and remove all failed
-items right after that.
+** deprecated ** Use remove_failed_items() instead.
+
+This method is now using remove_failed_items() under the hood.
+The default values for Chunk and Loglimit are used.
+Because ot the Loglimit, there is a maximum of the amount it failed items
+this method will return. So if it returns 100, it is possible that 
+the actual amount is higher.
+
 Typical use could be a cronjob that warns about failed items
 (e.g. via email) and cleans them up.
 
@@ -1012,16 +1117,65 @@ Supported options:
 
 =over 2
 
-=item * B<MaxAge> => $seconds
+=item * B<MaxAge>
 Only the failed items that are older then $seconds will be retrieved and
 removed.
 
-=item * B<MinFailCount> => $n
-Only the items that failed at least $n times will be retrieved and removed.
+=item * B<MinFailCount>
+Filters out items with have at least MaxFailCount failures. Default: 0
 
 =back
 
 If both options are used, only one of the two needs to be true to retrieve and remove an item.
+
+=head2 my ($n_removed, \@raw_failed_items) = $q->remove_failed_items(%options);
+
+This method will remove the items that are considered as failing
+permanently, according the the criteria passed via the options.
+
+Returns array ($n_removed, \@raw_items) where $n_removed indicates how many 
+items are removed from the failed queue. The @raw_items will contain objects
+of the type Queue::Q::Reliable::Item which failed permanently. The number of
+objects is the lowest number of $n_removed and of the LogLimit option
+(see below).
+
+The way this method works is moving failed items to a temporary list in Redis
+and process that sequentially with a server side lua script. This lua
+script is called repeatedly and will handle up to "Chunk" number of items
+in each call. Depending the criteria items will be put back in the failed
+queue or not. When the temporary queue is empty, the lua script is not longer
+called. The items that are not put back in the queue are put in a "log" list.
+
+Usually you will want to know the details of the failed items. But if there
+many (e.g. millions) it is not likely you will read the details.
+That is the reason there is a LogLimit option. 
+
+Typical use could be a cronjob that warns about failed items
+(e.g. via email) and cleans them up.
+
+Supported options:
+
+=over 2
+
+=item * B<MinAge>
+Filters out the items older than MinAge seconds. Default: 0.
+
+=item * B<MinFailCount>
+Filters out items with have at least MaxFailCount failures. Default: 0
+
+=item * B<Chunk>
+Performance related: amount of items to handle in one lua call.
+Higher values will result in higher throughput, but more stress on Redis.
+Default: 100.
+
+=item * B<LogLimit>
+The maximum number of raw items (with messages) you want to get back after one call
+of this function. Default: 100
+
+=back
+
+If one or two of the MinAge and MinFailCount related criteria are true,
+the item is considered as permanently failed.
 
 =head2 my $age = $q->age([$type]);
 
