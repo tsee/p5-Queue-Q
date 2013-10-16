@@ -296,8 +296,8 @@ if len > 0 then
         local i = cjson.decode(item)
         tmin = ts - i.fc*delay
 
-        if i.fc < fc and 
-            (i.t <= tmin or (i.created ~= nil and i.created < tmin)) then
+        if (fc == -1 or i.fc <= fc) and
+            (i.t <= tmin or (i.created ~= nil and i.created <=tmin)) then
 
             -- item should be requeued
             n_requeued = n_requeued + 1

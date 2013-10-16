@@ -295,7 +295,7 @@ sub requeue_failed_items {
     my %options = @_;
     # delay: how long before trying again after a (temporary) fail
     my $delay   = delete $options{Delay}        || 0;
-    my $max_fc  = delete $options{MaxFailCount} || 0;
+    my $max_fc  = delete $options{MaxFailCount} || -1;
     my $chunk   = delete $options{Chunk}        || 100;
     cluck("Invalid option: $_") for (keys %options);
 
@@ -786,7 +786,7 @@ Queue::Q::ReliableFIFO::Redis - In-memory Redis implementation of the ReliableFI
   # retry items that failed before:
   $q->requeue_failed_items();
   $q->requeue_failed_items(
-    MaxFailCount => 3,  # only requeue if the item failed at least 3 times
+    MaxFailCount => 3,  # only requeue if there were not more than 3 failures
     Delay => 3600,      # only requeue if the previous fail is at least 1 hour ago
   );
 
@@ -1067,10 +1067,11 @@ The number of items actually moved will be the return value.
 =over
 
 =item * B<MaxFailCount>
-Filters out items with less than MaxFailCount failures. Default: 0
+Takes only the items with not more than MaxFailCount failures. Value "-1"
+means "regardless how many times it fails". Default: -1
 
 =item * B<Delay>
-Filters out items that failed at least Delay seconds ago. Default: 0.
+Takes only the items that failed at least Delay seconds ago. Default: 0.
 
 =item * B<Chunk>
 Performance related: amount of items to handle in one lua call.
@@ -1122,7 +1123,7 @@ Only the failed items that are older then $seconds will be retrieved and
 removed.
 
 =item * B<MinFailCount>
-Filters out items with have at least MaxFailCount failures. Default: 0
+Takes only the items with have at least MaxFailCount failures. Default: 0
 
 =back
 
@@ -1158,10 +1159,10 @@ Supported options:
 =over 2
 
 =item * B<MinAge>
-Filters out the items older than MinAge seconds. Default: 0.
+Takes only the items older than MinAge seconds. Default: 0.
 
 =item * B<MinFailCount>
-Filters out items with have at least MaxFailCount failures. Default: 0
+Takes only the items with have at least MaxFailCount failures. Default: 0
 
 =item * B<Chunk>
 Performance related: amount of items to handle in one lua call.
