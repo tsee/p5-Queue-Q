@@ -463,7 +463,7 @@ sub memory_usage_perc {
 SCOPE: {
     my %ValidErrorActions = map { $_ => 1 } (qw(drop requeue));
     my %ValidOptions       = map { $_ => 1 } (qw(
-        Chunk DieOnError MaxItems MaxSeconds ProcessAll Pause ReturnWhenEmpty NoSigHandlers
+        Chunk DieOnError ReturnOnDie MaxItems MaxSeconds ProcessAll Pause ReturnWhenEmpty NoSigHandlers
     ));
 
     sub consume {
@@ -484,7 +484,9 @@ SCOPE: {
         $options ||= {};
         my $chunk       = delete $options->{Chunk} || 1;
         croak("Chunk should be a number > 0") if (! $chunk > 0);
-        my $die         = delete $options->{DieOnError} || 0;
+        cluck("DieOnError is deprecated, use ReturnOnDie instead")
+            if exists $options->{DieOnError};
+        my $return      = delete $options->{ReturnOnDie} || delete $options->{DieOnError} || 0;
         my $maxitems    = delete $options->{MaxItems} || -1;
         my $maxseconds  = delete $options->{MaxSeconds} || 0;
         my $pause       = delete $options->{Pause} || 0;
@@ -538,9 +540,9 @@ SCOPE: {
                         };
                         last;
                     }
-                    if ($die) {
+                    if ($return) {
                         $stop = 1;
-                        cluck("Stopping because of DieOnError\n");
+                        cluck("Stopping because of ReturnOnDie\n");
                     }
                 } else {
                     for (1 .. $MAX_RECONNECT) {    # retry if connection is lost
@@ -600,8 +602,8 @@ SCOPE: {
                                 };
                                 last;
                             }
-                            if ($die) {
-                                cluck("Stopping because of DieOnError\n");
+                            if ($return) {
+                                cluck("Stopping because of ReturnOnDie\n");
                                 $stop = 1;
                             }
                             last if $stop;
@@ -627,8 +629,8 @@ SCOPE: {
                                 };
                                 last;
                             }
-                            if ($die) {
-                                cluck("Stopping because of DieOnError\n");
+                            if ($return) {
+                                cluck("Stopping because of ReturnOnDie\n");
                                 $stop = 1;
                             }
                         }
@@ -971,8 +973,11 @@ for number of items to claim and to mark as done in one go.
 This helps to fight latency.
 
 =item * B<DieOnError>.
-If this option has a true value, the consumer will stop when the
-callback function returns a "die" call. Default "false".
+DEPRECATED. See C<ReturnOnDie>.
+
+=item * B<ReturnOnDie>
+If this option has a true value, the consumer will stop if the
+callback function does a C<die> call. Default is "false".
 
 =item * B<MaxItems>
 This can be used to limit the consume method to process only a limited amount
