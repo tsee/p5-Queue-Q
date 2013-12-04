@@ -4,7 +4,7 @@
 -- # ARGV[1] timestamp
 -- # ARGV[2] number of items to requeue. Value "0" means "all items"
 --
-if #KEYS ~= 2 then error('requeue_busy requires 2 key') end
+if #KEYS ~= 2 then error('requeue_failed requires 2 keys') end
 -- redis.log(redis.LOG_NOTICE, "nr keys: " .. #KEYS)
 local from  = assert(KEYS[1], 'failed queue name missing')
 local dest  = assert(KEYS[2], 'dest queue name missing')

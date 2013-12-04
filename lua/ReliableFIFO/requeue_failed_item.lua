@@ -5,7 +5,7 @@
 -- # ARGV[2] item
 --
 -- redis.log(redis.LOG_WARNING, "requeue_tail")
-if #KEYS ~= 2 then error('requeue_busy requires 2 key') end
+if #KEYS ~= 2 then error('requeue_failed_item requires 2 keys') end
 -- redis.log(redis.LOG_NOTICE, "nr keys: " .. #KEYS)
 local from  = assert(KEYS[1], 'failed queue name missing')
 local dest  = assert(KEYS[2], 'dest queue name missing')
