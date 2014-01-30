@@ -21,7 +21,7 @@ sub new {
     my ($class, %params) = @_;
     for (qw(server port queue_name)) {
         croak("Need '$_' parameter")
-            if not exists $params{$_};
+            if not defined $params{$_};
     }
 
     my $self = bless({
