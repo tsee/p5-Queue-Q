@@ -1,7 +1,12 @@
 Revision history for Perl extension Queue::Q.
 
+0.22
+  - DieOnError option deprecated and renamed to ReturnOnDie
+  - Better lua error messages
+  - Disallow undefined server names or ports
+
 0.21 Wed Oct 16 08:38:12 CEST 2013
-  - bugfix introduced in 0.20 with requeue_failed_items when called without paramters
+  - bugfix introduced in 0.20 with requeue_failed_items when called without parameters
 
 0.20 Fri Oct 11 14:13:06 CEST 2013
   - bugfixes for solving issues with very large number of failed items
