@@ -1,5 +1,8 @@
 Revision history for Perl extension Queue::Q.
 
+0.23
+  - Repair broken CPAN upload
+
 0.22
   - DieOnError option deprecated and renamed to ReturnOnDie
   - Better lua error messages
