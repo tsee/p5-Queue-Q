@@ -220,7 +220,7 @@ requeue_failed => q{
 -- # ARGV[1] timestamp
 -- # ARGV[2] number of items to requeue. Value "0" means "all items"
 --
-if #KEYS ~= 2 then error('requeue_busy requires 2 key') end
+if #KEYS ~= 2 then error('requeue_failed requires 2 keys') end
 -- redis.log(redis.LOG_NOTICE, "nr keys: " .. #KEYS)
 local from  = assert(KEYS[1], 'failed queue name missing')
 local dest  = assert(KEYS[2], 'dest queue name missing')
@@ -296,7 +296,7 @@ if len > 0 then
         local i = cjson.decode(item)
         tmin = ts - i.fc*delay
 
-        if (fc == -1 or i.fc <= fc) and
+        if (fc == -1 or i.fc <= fc) and 
             (i.t <= tmin or (i.created ~= nil and i.created <=tmin)) then
 
             -- item should be requeued
@@ -328,7 +328,7 @@ requeue_failed_item => q{
 -- # ARGV[2] item
 --
 -- redis.log(redis.LOG_WARNING, "requeue_tail")
-if #KEYS ~= 2 then error('requeue_busy requires 2 key') end
+if #KEYS ~= 2 then error('requeue_failed_item requires 2 keys') end
 -- redis.log(redis.LOG_NOTICE, "nr keys: " .. #KEYS)
 local from  = assert(KEYS[1], 'failed queue name missing')
 local dest  = assert(KEYS[2], 'dest queue name missing')
