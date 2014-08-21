@@ -7,8 +7,8 @@ use Class::XSAccessor {getters => ['_serialized']};
 # for reasons of debugging, JSON is easier, while Sereal::* is
 # faster (about 7%) and delivers smaller serialized blobs.
 use JSON::XS; # use the real stuff, no fall back on pure Perl JSON please
-my $serializer   = JSON::XS->new->pretty(0);
-my $deserializer = JSON::XS->new->pretty(0);
+my $serializer   = JSON::XS->new->utf8->pretty(0);
+my $deserializer = JSON::XS->new->utf8->pretty(0);
 
 #use Sereal::Encoder;
 #use Sereal::Decoder;
