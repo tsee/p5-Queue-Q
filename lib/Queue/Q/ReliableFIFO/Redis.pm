@@ -391,13 +391,13 @@ sub queue_length {
 
 sub peek_item {
     my ($self, $type) = @_;
-    # this function returns age of oldest item in the queue (in seconds)
+    # this function returns the value of oldest item in the queue
     __validate_type(\$type);
     my $qn = $self->queue_name . "_$type";
 
     # take oldest item
     my ($serial) = $self->redis_conn->lrange($qn,-1,-1);
-    return undef if ! $serial;    # empty queue, so age 0
+    return undef if ! $serial;    # empty queue
 
     my $item = Queue::Q::ReliableFIFO::Item->new(_serialized => $serial);
     return $item->data();
