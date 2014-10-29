@@ -481,7 +481,7 @@ SCOPE: {
         my $onerror = $error_subs{$error_action}
             || croak("no handler for $error_action");
 
-        $options ||= {};
+        $options = $options ? {%$options} : {};
         my $chunk       = delete $options->{Chunk} || 1;
         croak("Chunk should be a number > 0") if (! $chunk > 0);
         cluck("DieOnError is deprecated, use ReturnOnDie instead")
