@@ -1,5 +1,12 @@
 Revision history for Perl extension Queue::Q.
 
+0.24
+  - don't modify the $options hash passed to ->consume
+  - ReliableFIFO: Serialize JSON to binary octets instead of unicode codepoints.
+  - Throw a warning when items are not properly removed from the 'busy'
+    queue when using the Chunk => 1 option (which is the default one).
+  - Lua: Make some error messages a bit more accurate
+
 0.23
   - Repair broken CPAN upload
 
