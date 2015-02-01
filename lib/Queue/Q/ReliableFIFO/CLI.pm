@@ -156,6 +156,24 @@ sub mv {
     }
     return $count;
 }
+sub cp {
+   my ($self, $from, $to, $limit) = @_;
+    my @from = $self->newpath($from);
+    my @to   = $self->newpath($to);
+    die "$from[1]? expected main|busy|time|failed" if !exists $type{$from[1]};
+    die "$to[1]? expected main|busy|time|failed" if !exists $type{$to[1]};
+    die "Path length should be 2: " . join('/',@from) if @from != 2;
+    die "Path length should be 2: " . join('/',@to) if @to != 2;
+    my $conn = $self->conn;
+    my $redis_from = join('_', @from);
+    my $redis_to = join('_', @to);
+
+    my $length= $conn->llen($redis_from);
+    my @elements = $conn->lrange($redis_from, 0, ($limit || $length ) - 1 );
+    $conn->rpush($redis_to, $_) for @elements;
+    return scalar @elements;
+}
+
 sub rm {
     my ($self, $dir, $limit) = @_;
     my @dir = $self->newpath($dir);
@@ -247,6 +265,7 @@ sub run {
         close
         db
         mv
+        cp
         rm
         who
         quit
@@ -261,6 +280,7 @@ sub run {
                 "ls [<path>]",
                 "cd <path>",
                 "mv <path-from> <path-to> [<limit>]",
+                "cp <path-from> <path-to> [<limit>]",
                 "cleanup <timeout> <(requeue|fail|drop)>", 
                 'rm <path> [<limit>]',
                 'db <db>',
@@ -345,6 +365,9 @@ sub run {
                     }
                     elsif ($cmd eq "mv") {
                         printf "%d items moved\n", $self->mv(@args);
+                    }
+                    elsif ($cmd eq "cp") {
+                        printf "%d items copied\n", $self->cp(@args);
                     }
                     elsif ($cmd eq 'ls') {
                         print join("\n", $self->ls(@args)), "\n";
