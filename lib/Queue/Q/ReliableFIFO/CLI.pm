@@ -170,7 +170,7 @@ sub cp {
 
     my $length= $conn->llen($redis_from);
     my @elements = $conn->lrange($redis_from, 0, ($limit || $length ) - 1 );
-    $conn->rpush($redis_to, $_) for @elements;
+    $conn->rpush($redis_to, @elements) if @elements;
     return scalar @elements;
 }
 
