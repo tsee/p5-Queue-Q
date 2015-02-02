@@ -8,7 +8,6 @@ use Queue::Q::ReliableFIFO::Item;
 use Queue::Q::ReliableFIFO::Lua;
 use Redis;
 use Time::HiRes qw(usleep);
-use Data::Dumper;
 
 use Class::XSAccessor {
     getters => [qw(

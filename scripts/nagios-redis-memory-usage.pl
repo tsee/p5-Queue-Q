@@ -9,7 +9,6 @@ use strict;
 
 use Redis;
 use Getopt::Std;
-use Data::Dumper;
 
 use constant {
     OK       => 0,
@@ -21,7 +20,6 @@ use constant {
 my %opts;
 getopts('H:p:w:c:?hv', \%opts);
 
-#print Dumper(\%opts);
 usage() if ( exists $opts{h} || exists $opts{'?'} || !exists $opts{H});
 
 my $VERBOSE = exists $opts{v};
