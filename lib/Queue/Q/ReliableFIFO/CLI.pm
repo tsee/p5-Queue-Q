@@ -221,7 +221,7 @@ sub show_prompt {
 }
 
 sub run {
-    my $self = shift;
+    my ($self, %params) = @_;
     $| = 1;
 
     my @history;
@@ -229,8 +229,8 @@ sub run {
 
     # take settings from previous session
     my $conf_file = "$ENV{HOME}/.reliablefifo";
-    my %conf = ();
-    if (-f $conf_file) {
+    my %conf;
+    if (!$params{ignore_config_file} and -f $conf_file) {
         %conf = %{decode_json(read_file($conf_file))};
         $self->open(server => $conf{server},  port => $conf{port})
             if exists $conf{server} && exists $conf{port};
@@ -429,7 +429,8 @@ in your PATH.
 
 The last state of the cli session is saved in $ENV{HOME}/.reliablefifo
 (as JSON). When restarting the cli, the previous context will be
-reloaded, i.e. connection, directory and history
+reloaded, i.e. connection, directory and history (unless the
+parameter C<ignore_config_file> is passed to run()).
 
 The command a in unix style, like "ls", "cd", "rm" and "mv". Press "?"
 to get a list of available commands. A directory structure is emulated
