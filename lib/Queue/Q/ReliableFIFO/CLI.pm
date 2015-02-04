@@ -140,11 +140,11 @@ sub mv {
     my ($self, $from, $to, $limit) = @_;
     my @from = $self->newpath($from);
     my @to   = $self->newpath($to);
-    die "$from[1]? expected main|busy|time|failed" if !exists $type{$from[1]};
-    die "$to[1]? expected main|busy|time|failed" if !exists $type{$to[1]};
-    die "Path length should be 2: " . join('/',@from) if @from != 2;
-    die "Path length should be 2: " . join('/',@to) if @to != 2;
-    die "from and to are same" if join('',@from) eq join('',@to);
+    die "$from[1]? expected main|busy|time|failed\n" if !exists $type{$from[1]};
+    die "$to[1]? expected main|busy|time|failed\n" if !exists $type{$to[1]};
+    die "Path length should be 2: " . join('/',@from) . "\n" if @from != 2;
+    die "Path length should be 2: " . join('/',@to) . "\n" if @to != 2;
+    die "from and to are the same\n" if join('',@from) eq join('',@to);
 
     my $conn = $self->conn;
     my $count = 0;
@@ -160,10 +160,10 @@ sub cp {
    my ($self, $from, $to, $limit) = @_;
     my @from = $self->newpath($from);
     my @to   = $self->newpath($to);
-    die "$from[1]? expected main|busy|time|failed" if !exists $type{$from[1]};
-    die "$to[1]? expected main|busy|time|failed" if !exists $type{$to[1]};
-    die "Path length should be 2: " . join('/',@from) if @from != 2;
-    die "Path length should be 2: " . join('/',@to) if @to != 2;
+    die "$from[1]? expected main|busy|time|failed\n" if !exists $type{$from[1]};
+    die "$to[1]? expected main|busy|time|failed\n" if !exists $type{$to[1]};
+    die "Path length should be 2: " . join('/',@from) . "\n" if @from != 2;
+    die "Path length should be 2: " . join('/',@to) . "\n" if @to != 2;
     my $conn = $self->conn;
     my $redis_from = join('_', @from);
     my $redis_to = join('_', @to);
@@ -177,7 +177,7 @@ sub cp {
 sub rm {
     my ($self, $dir, $limit) = @_;
     my @dir = $self->newpath($dir);
-    die "not a complete path" if (@dir != 2);
+    die "not a complete path\n" if (@dir != 2);
     my $redisname = join '_', @dir;
     my $conn = $self->conn;
     my $count = 0;
@@ -201,8 +201,8 @@ sub who {
 }
 sub cleanup {
     my ($self, $timeout, $action) = @_;
-    die "not connected" if !defined $self->path;
-    die "command not available here" if @{$self->path} < 1;
+    die "not connected\n" if !defined $self->path;
+    die "command not available here\n" if @{$self->path} < 1;
     my @items = $self->{redis}->handle_expired_items($timeout, $action);
     return scalar @items;
 }
@@ -397,7 +397,7 @@ sub run {
                     1;
                 }
                 or do {
-                    print "$@\n";
+                    print $@;
                 }
             }
             else {
