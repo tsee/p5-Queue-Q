@@ -1,5 +1,8 @@
 Revision history for Perl extension Queue::Q.
 
+0.26
+  - Fix uninitialized warnings in the redis implementation of ReliableFIFO
+
 0.25
   - Add cp command to the CLI (Andrey Frolov)
   - Add new parameter ignore_config_file to run the CLI
