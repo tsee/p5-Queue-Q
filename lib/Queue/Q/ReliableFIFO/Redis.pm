@@ -520,8 +520,8 @@ SCOPE: {
 
         if ($chunk == 1) {
             my $die_afterwards = 0;
-            my $claimed_count;
-            my $done_count;
+            my $claimed_count = 0;
+            my $done_count = 0;
             while(!$stop) {
                 my $item = eval { $self->claim_item(); };
                 if (!$item) {
