@@ -20,6 +20,7 @@ use Class::XSAccessor {
                 requeue_limit
                 redis_conn
                 redis_options
+                warn_on_requeue
                 _main_queue
                 _busy_queue
                 _failed_queue
@@ -47,7 +48,8 @@ sub new {
 
     my %AllowedNewParams = map { $_ => undef } (qw(
         server port db queue_name busy_expiry_time
-        claim_wait_timeout requeue_limit redis_conn redis_options));
+        claim_wait_timeout requeue_limit redis_conn redis_options
+        warn_on_requeue));
     for (keys %params) {
         croak("Invalid parameter '$_'")
             if not exists $AllowedNewParams{$_};
@@ -58,6 +60,7 @@ sub new {
         busy_expiry_time   => 30,
         claim_wait_timeout => 1,
         db                 => 0,
+        warn_on_requeue    => 0,
         %params
     } => $class);
     $self->{"_$_" . '_queue'} = $params{queue_name} . "_$_"
@@ -564,7 +567,7 @@ SCOPE: {
             }
             my $still_busy = $claimed_count - $done_count;
             warn "not all items removed from busy queue ($still_busy)\n"
-                if $still_busy;
+                if $self->warn_on_requeue && $still_busy;
         }
         else {
             my $die_afterwards = 0;
@@ -655,7 +658,7 @@ SCOPE: {
                     last;
                 }
                 warn "not all items removed from busy queue ($count)\n"
-                    if $count != @done;
+                    if $self->warn_on_requeue && $count != @done;
 
                 # put back the claimed but not touched items
                 if (@items > 0) {
@@ -908,6 +911,9 @@ after which an item is supposed to get stuck. After this time a follow
 up strategy should be applied. (Normally done by the C<handle_expired_items()>
 method, typically done by a cronjob).
 C<Default value is 30>.
+
+=item C<warn_on_requeue> to emit warning messages when we fail to process
+all items we tried to claim.
 
 =back
 
