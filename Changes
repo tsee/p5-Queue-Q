@@ -1,5 +1,9 @@
 Revision history for Perl extension Queue::Q.
 
+0.27
+  - Add option warn_on_requeue to Queue::Q::ReliableFIFO::Redis to
+    make warnings introduced in 0.24 optional by default
+
 0.26
   - Fix uninitialized warnings in the redis implementation of ReliableFIFO
 
