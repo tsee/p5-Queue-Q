@@ -2,6 +2,7 @@ use strict;
 use warnings;
 use File::Spec;
 use Test::More;
+use Encode;
 
 use lib (-d 't' ? File::Spec->catdir(qw(t lib)) : 'lib' );
 use Queue::Q::Test;
@@ -22,4 +23,19 @@ isa_ok($q, "Queue::Q::ReliableFIFO::Redis");
 
 Queue::Q::TestReliableFIFO::test_claim_fifo($q);
 
+roundtrip(pack("C*", 28, 29, 30));
+roundtrip(pack("C*", 128, 129, 130));
+roundtrip("\x{1d45b}\x{3a3}");
+
 done_testing();
+
+sub roundtrip {
+    my ($a) = @_;
+
+    $q->enqueue_item($a);
+    my $item = $q->claim_item();
+    $q->mark_item_as_done($item);
+
+    is($item->data, $a, "verify roundtrip: " . join(',', unpack("C*", $a)));
+    is(Encode::is_utf8($item->data), Encode::is_utf8($a), "Verifying is_utf8 equivalence for ". join(',', unpack("C*", $a)));
+}
