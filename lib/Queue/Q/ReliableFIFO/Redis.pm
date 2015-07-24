@@ -465,7 +465,7 @@ sub memory_usage_perc {
 SCOPE: {
     my %ValidErrorActions = map { $_ => 1 } (qw(drop requeue));
     my %ValidOptions       = map { $_ => 1 } (qw(
-        Chunk DieOnError ReturnOnDie MaxItems MaxSeconds ProcessAll Pause ReturnWhenEmpty NoSigHandlers
+        Chunk DieOnError ReturnOnDie MaxItems MaxSeconds ProcessAll Pause ReturnWhenEmpty NoSigHandlers WarnOnError
     ));
 
     sub consume {
@@ -495,6 +495,7 @@ SCOPE: {
         my $process_all = delete $options->{ProcessAll} || 0;
         my $return_when_empty= delete $options->{ReturnWhenEmpty} || 0;
         my $nohandlers  = delete $options->{NoSigHandlers} || 0;
+        my $warn_on_error = delete $options->{WarnOnError} || 0;
         croak("Option ProcessAll without Chunk does not make sense")
             if $process_all && $chunk <= 1;
         croak("Option Pause without Chunk does not make sense")
@@ -536,6 +537,8 @@ SCOPE: {
                 my $ok = eval { $callback->($item->data); 1; };
                 if (!$ok) {
                     my $error = _clean_error($@);
+                    warn "callback had an error: $error"
+                      if $warn_on_error and $error;
                     for (1 .. $MAX_RECONNECT) {    # retry if connection is lost
                         eval { $onerror->($self, $item, $error); 1; }
                         or do {
@@ -602,6 +605,8 @@ SCOPE: {
                         # we need to call onerror for all items now
                         @done = (); # consider all items failed
                         my $error = _clean_error($@);
+                        warn "callback had an error: $error"
+                          if $warn_on_error and $error;
                         while (my $item = shift @items) {
                             for (1 .. $MAX_RECONNECT) {
                                 eval { $onerror->($self, $item, $error); 1; }
@@ -629,6 +634,8 @@ SCOPE: {
                         }
                         else {
                             my $error = _clean_error($@);
+                            warn "callback had an error: $error"
+                              if $warn_on_error and $error;
                             # retry if connection is lost
                             for (1 .. $MAX_RECONNECT) {
                                 eval { $onerror->($self, $item, $error); 1; }
@@ -991,6 +998,10 @@ DEPRECATED. See C<ReturnOnDie>.
 =item * B<ReturnOnDie>
 If this option has a true value, the consumer will stop if the
 callback function does a C<die> call. Default is "false".
+
+=item * B<WarnOnError>
+If this option has a true value, the consumer will warn if the
+callback function dies. Default is "false".
 
 =item * B<MaxItems>
 This can be used to limit the consume method to process only a limited amount
