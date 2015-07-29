@@ -1,8 +1,5 @@
 Revision history for Perl extension Queue::Q.
 
-  - Change default serializer to Sereal as that gets binary strings
-    correct (unlike JSON::XS). Added test cases.
-
 0.27
   - Add option warn_on_requeue to Queue::Q::ReliableFIFO::Redis to
     make warnings introduced in 0.24 optional by default

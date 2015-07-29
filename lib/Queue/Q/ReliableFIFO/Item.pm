@@ -6,15 +6,14 @@ use Class::XSAccessor {getters => ['_serialized']};
 
 # for reasons of debugging, JSON is easier, while Sereal::* is
 # faster (about 7%) and delivers smaller serialized blobs.
-#use JSON::XS; # use the real stuff, no fall back on pure Perl JSON please
-# The JSON::XS doesn't get binary strings quite right. 
-#my $serializer   = JSON::XS->new->utf8->pretty(0);
-#my $deserializer = JSON::XS->new->utf8->pretty(0);
+use JSON::XS; # use the real stuff, no fall back on pure Perl JSON please
+my $serializer   = JSON::XS->new->utf8->pretty(0);
+my $deserializer = JSON::XS->new->utf8->pretty(0);
 
-use Sereal::Encoder;
-use Sereal::Decoder;
-my $serializer   = Sereal::Encoder->new();
-my $deserializer = Sereal::Decoder->new();
+#use Sereal::Encoder;
+#use Sereal::Decoder;
+#my $serializer   = Sereal::Encoder->new();
+#my $deserializer = Sereal::Decoder->new();
 
 my @item_info = (
     't',        # time the item was created
