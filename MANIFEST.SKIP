@@ -9,4 +9,5 @@ Makefile\.old$
 MYMETA\.(?:yml|json)$
 redis_connect_data$
 MANIFEST\.bak$
+dist.ini$
 ~$
