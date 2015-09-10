@@ -8,7 +8,7 @@ WriteMakefile(
     EXE_FILES         => [qw(scripts/fifo-cli)],
     PREREQ_PM         => {
       'Redis' => '1.955',
-      'Redis::ScriptCache' => '0.01',
+      'Redis::ScriptCache' => '0.03',
       'Sereal::Encoder' => '0.10',
       'Sereal::Decoder' => '0.10',
       'Class::XSAccessor' => '0.12',
