@@ -4,7 +4,6 @@ use warnings;
 use Carp qw(croak);
 
 use Scalar::Util qw(blessed);
-use Digest::SHA1;
 use Redis;
 use Redis::ScriptCache;
 
@@ -24,7 +23,6 @@ our $EnqueueScript = qq#
     redis.call('lpush', KEYS[1], ARGV[1])
     redis.call('hset', KEYS[1] .. "${\STORAGE_SUFFIX()}", ARGV[1], ARGV[2])
 #;
-our $EnqueueScriptSHA = Digest::SHA1::sha1_hex($EnqueueScript);
 
 # in: queue_name, time
 # out: itemkey, value
@@ -37,7 +35,6 @@ our $ClaimScript = qq#
     redis.call('zadd', KEYS[1] .. "${\CLAIMED_SUFFIX()}", ARGV[1], itemkey)
     return {itemkey, data}
 #;
-our $ClaimScriptSHA = Digest::SHA1::sha1_hex($ClaimScript);
 
 # in: queue_name, itemkey
 # out: nothing
@@ -45,7 +42,6 @@ our $FinishScript = qq#
     redis.call('hdel', KEYS[1] .. "${\STORAGE_SUFFIX()}", ARGV[1])
     redis.call('zrem', KEYS[1] .. "${\CLAIMED_SUFFIX()}", ARGV[1])
 #;
-our $FinishScriptSHA = Digest::SHA1::sha1_hex($FinishScript);
 
 sub new {
     my ($class, %params) = @_;
@@ -68,6 +64,18 @@ sub new {
     );
     $self->{_script_cache}
         = Redis::ScriptCache->new(redis_conn => $self->_redis_conn);
+    $self->{_script_cache}->register_script(
+        'enqueue_script',
+        $EnqueueScript,
+    );
+    $self->{_script_cache}->register_script(
+        'claim_script',
+        $ClaimScript,
+    );
+    $self->{_script_cache}->register_script(
+        'finish_script',
+        $FinishScript,
+    );
 
     $self->_redis_conn->select($self->db) if $self->db;
 
@@ -88,9 +96,8 @@ sub enqueue_item {
     $item = Queue::Q::ClaimFIFO::Item->new(item_data => $item);
 
     $self->_script_cache->run_script(
-        $EnqueueScriptSHA,
+        'enqueue_script',
         [1, $self->queue_name, $item->_key, $item->_serialized_data],
-        \$EnqueueScript
     );
 
     return $item;
@@ -116,9 +123,8 @@ sub enqueue_items {
         my $data = $items[$_]->_serialized_data;
 
         $self->_script_cache->run_script(
-            $EnqueueScriptSHA,
+            'enqueue_script',
             [1, $qn, $key, $data],
-            \$EnqueueScript
         );
     }
 
@@ -129,9 +135,8 @@ sub claim_item {
     my $self = shift;
 
     my ($key, $serialized_data) = $self->_script_cache->run_script(
-        $ClaimScriptSHA,
+        'claim_script',
         [1, $self->queue_name, time()],
-        \$ClaimScript
     );
     return undef if not defined $key;
 
@@ -152,9 +157,8 @@ sub claim_items {
     for (1..$n) {
         # TODO Lua script for multiple items!
         my ($key, $serialized_data) = $self->_script_cache->run_script(
-            $ClaimScriptSHA,
+            'claim_script',
             [1, $self->queue_name, time()],
-            \$ClaimScript
         );
         last if not defined $key;
 
@@ -174,9 +178,8 @@ sub mark_item_as_done {
 
     my $key = $item->_key;
     $self->_script_cache->run_script(
-        $FinishScriptSHA,
+        'finish_script',
         [1, $self->queue_name, $key],
-        \$FinishScript,
     );
 }
 
@@ -187,9 +190,8 @@ sub mark_items_as_done {
         # TODO Lua script for multiple items!
         my $key = $_->_key;
         $self->_script_cache->run_script(
-            $FinishScriptSHA,
+            'finish_script',
             [1, $self->queue_name, $key],
-            \$FinishScript,
         );
     }
 }
