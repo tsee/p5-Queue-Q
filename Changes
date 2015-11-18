@@ -1,5 +1,8 @@
 Revision history for Perl extension Queue::Q.
 
+0.29
+  - Migrate fifo-cli to Term::ReadLine
+
 0.28
   - Bring Queue::Q::ClaimFIFO::Redis in line with latest Redis::ScriptCache
     changes
