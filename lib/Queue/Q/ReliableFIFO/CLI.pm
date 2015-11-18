@@ -2,7 +2,7 @@
 package Queue::Q::ReliableFIFO::CLI;
 use strict;
 use Redis;
-use Term::ReadKey;
+use Term::ReadLine;
 use Data::Dumper;
 use JSON::XS;
 use File::Slurp;
@@ -30,7 +30,7 @@ use Class::XSAccessor {
 # @$path==1 -> /queue
 # @$path==2 -> /queue/type
 
-my @all_types = (qw(main busy failed ));
+my @all_types = (qw(main busy failed));
 my %type = map { $_ => undef } @all_types;
 
 sub open {
@@ -217,7 +217,7 @@ sub show_prompt {
     if (! defined $path) { $prompt = ''; }
     else { $prompt = "$s:$p (db=$d) \[ $pathstr \]" }
 
-    return 'FIFO:', $prompt, "-> ";
+    return sprintf '%s:%s-> ', FIFO => $prompt;
 }
 
 sub run {
@@ -225,7 +225,6 @@ sub run {
     $| = 1;
 
     my @history;
-    my $his_pos = 0;
 
     # take settings from previous session
     my $conf_file = "$ENV{HOME}/.reliablefifo";
@@ -240,8 +239,7 @@ sub run {
         $self->cd($type) if $type;
     }
     my $quit = sub {
-        ReadMode 0;
-
+        print "\n";
         # save setting for next session
         my %conf = ();
         if (defined $self->path) {
@@ -250,8 +248,6 @@ sub run {
             $conf{db} = $self->db;
             $conf{path} = $self->path;
         }
-        splice(@history, 0, $#history-20) if $#history > 20; # limit history
-        pop @history;   # remove empty item
         $conf{history} = \@history;
         write_file($conf_file, encode_json(\%conf));
 
@@ -289,60 +285,19 @@ sub run {
     );
     push(@{$help{$_}}, ("?", "who", "hist", "quit")) for (0 .. 3);
 
-    ReadMode 4;
-    print "Type '?' for help\n";
-    print $self->show_prompt;
+    my $ver = join ".", map {ord} split(//, $^V);
+    my $term = Term::ReadLine->new("perl $ver");
+    $term->addhistory($_) for map {chomp; $_} @history;
+    $term->ornaments( join ',' => qw/ md me /, undef, undef );
+
+    print { $term->OUT } "Type '?' for help\n";
 
     while(1) {
-        my $line;
-        push @history, '';
-        $his_pos = $#history;
+        my $line = $term->readline($self->show_prompt);
+        last if not defined $line;
+        chomp $line;
 
-        # deal with the keyboard
-        while (1) {
-            my $c = ReadKey(1);
-            next if ! defined $c;
-            my $ord = ord $c;
-
-            if ($ord == 3 || $ord == 4) {   # ctrl-c, ctrl-d
-                print "\n";
-                $quit->();
-            }
-            elsif ($ord == 127) {
-                print "\r" , $self->show_prompt , ' ' x length($line);
-                $line = substr($line, 0, length($line)-1);
-                print "\r", $self->show_prompt, $line;
-            }
-            elsif ($ord == 27) {
-                my $a = ord(ReadKey (1));
-                if ($a == 91) {
-                    my $b = ord(ReadKey (1));
-                    if ($b == 65 || $b == 66) {
-                        # arrow keys up/down
-                        print "\r" , $self->show_prompt , ' ' x length($line);
-                        if ($b == 65) {  # up
-                            $history[$his_pos] = $line if $his_pos == $#history;
-                            $his_pos-- if $his_pos > 0;
-                        }
-                        else {
-                            $his_pos++ if $his_pos < $#history;;
-                        }
-                        $line = $history[$his_pos];
-                        print "\r" ,  $self->show_prompt , $line;
-                    }
-                } # else ignore
-            }
-            elsif ($ord == 10) { #LF
-                $his_pos = $#history;
-                $history[$his_pos] = $line;
-                print $c;
-                last;
-            }
-            else {
-                $line .= $c;
-                print $c;
-            }
-        }
+        $line and push @history, $line;
 
         # deal with the command
         my ($cmd, @args) = split /\s+/, $line;
@@ -361,24 +316,24 @@ sub run {
                         $self->change_db(@args);
                     }
                     elsif ($cmd eq "rm") {
-                        printf "%d items removed\n", $self->rm(@args);
+                        printf { $term->OUT } "%d items removed\n", $self->rm(@args);
                     }
                     elsif ($cmd eq "mv") {
-                        printf "%d items moved\n", $self->mv(@args);
+                        printf { $term->OUT } "%d items moved\n", $self->mv(@args);
                     }
                     elsif ($cmd eq "cp") {
-                        printf "%d items copied\n", $self->cp(@args);
+                        printf { $term->OUT } "%d items copied\n", $self->cp(@args);
                     }
                     elsif ($cmd eq 'ls') {
-                        print join("\n", $self->ls(@args)), "\n";
+                        print { $term->OUT } join("\n", $self->ls(@args)), "\n";
                     }
                     elsif ($cmd eq 'who') {
-                        print join("\n", $self->who(@args)), "\n";
+                        print { $term->OUT } join("\n", $self->who(@args)), "\n";
                     }
                     elsif ($cmd eq 'cleanup') {
                         my $n = $self->cleanup(@args);
-                        printf "%d items affected\n", $n;
-                        print "Try again after <timeout> seconds\n" if ($n ==0);
+                        printf { $term->OUT } "%d items affected\n", $n;
+                        print { $term->OUT } "Try again after <timeout> seconds\n" if ($n ==0);
                     }
                     elsif ($cmd eq 'close') {
                         $self->close(), "\n";
@@ -387,24 +342,23 @@ sub run {
                         $quit->();
                     }
                     elsif ($cmd eq 'hist') {
-                        print "\t", join("\n\t", @history), "\n";
+                        print { $term->OUT } "\t", join("\n\t", @history), "\n";
                     }
                     elsif ($cmd eq '?') {
                         my $connected = defined $self->path ? 1 : 0;
-                        print "available commands at this level:\n\t",
+                        print { $term->OUT } "available commands at this level:\n\t",
                             join("\n\t", @{$help{$connected}}), "\n";
                     }
                     1;
                 }
                 or do {
-                    print $@;
+                    print { $term->OUT } $@;
                 }
             }
             else {
-                print "unknown command $cmd\n";
+                print { $term->OUT } "unknown command $cmd\n";
             }
         }
-        print $self->show_prompt;
     }
     $quit->();
 }
