@@ -1,5 +1,11 @@
 Revision history for Perl extension Queue::Q.
 
+0.31
+  - Add POD for queue_length() method
+
+0.30
+  - Repair broken CPAN upload (https://rt.cpan.org/Ticket/Display.html?id=109815)
+
 0.29
   - Migrate fifo-cli to Term::ReadLine
 
