@@ -945,6 +945,12 @@ C<$count> defaults to 1. Will block for C<claim_wait_timeout> seconds.
 
 Same as C<claim_item>, but non-blocking.
 
+=head2 queue_length($subqueue_name)
+
+This method can be used to obtain a simple count of the specified subqueue
+(i.e. main/busy/failed). Useful for monitoring checks, and also as a
+backpressure mechanism for throttling.
+
 =head2 consume(\&callback, $action, %options)
 
 This method is called by the consumer to consume the items of a
@@ -1219,14 +1225,26 @@ So this is a relatively cheap method.
 Returns objects of type Queue::Q::ReliableFIFO::Item from the busy list.
 You can limit the number of items by passing the limit to the method.
 
+If you require a simple count, and not the actual queue items themselves,
+consider using the method C<queue_length>. This avoids the overhead of
+deserialising each queue item by calling Redis's C<LLEN> command instead.
+
 =head2 my @raw_items = $q->raw_items_failed( [$max_number] );
 
 Similar to raw_items_busy() but for failed items.
+
+If you require a simple count, and not the actual queue items themselves,
+consider using the method C<queue_length>. This avoids the overhead of
+deserialising each queue item by calling Redis's C<LLEN> command instead.
 
 =head2 my @raw_items = $q->raw_items_main( [$max_number] );
 
 Similar to raw_items_busy() but for items in the working queue. Note that
 the main queue can be large, so a limit is strongly recommended here.
+
+If you require a simple count, and not the actual queue items themselves,
+consider using the method C<queue_length>. This avoids the overhead of
+deserialising each queue item by calling Redis's C<LLEN> command instead.
 
 =head2 my $memory_usage = $q->memory_usage_perc();
 
